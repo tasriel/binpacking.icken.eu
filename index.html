@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Kartonregeln</title>
+<meta name="description" content="Wie viele gleiche Kartons passen in einen Bin? Karton prüfen, Packmuster ansehen und Regeln im Format when … then N erzeugen.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Gleiche Kartons · Maße in mm · jeder Karton darf beliebig gedreht werden</span>
+    <h1>Wie viele Kartons passen in den Bin, und nach welchem Muster?</h1>
+    <p class="lede">Stelle zuerst die Innenmaße des Bins ein. Darunter prüfst du einzelne Kartons, lädst gespeicherte Packmuster und bekommst die Regelliste im Format „when … then N“, jede Regel mit einem Packmuster als Beleg.</p>
+  </header>
+
+  <section class="binbox" aria-labelledby="bin-title">
+    <h2 id="bin-title">Bin innen</h2>
+    <form class="form" id="bin-form" autocomplete="off">
+      <div class="field"><label for="bin-l">Länge</label><input id="bin-l" type="number" inputmode="decimal" min="1" step="0.1" value="603"></div>
+      <span class="times">×</span>
+      <div class="field"><label for="bin-b">Breite</label><input id="bin-b" type="number" inputmode="decimal" min="1" step="0.1" value="403"></div>
+      <span class="times">×</span>
+      <div class="field"><label for="bin-h">Höhe</label><input id="bin-h" type="number" inputmode="decimal" min="1" step="0.1" value="404"></div>
+      <span class="unit">mm</span>
+    </form>
+    <span class="err" id="bin-err" hidden></span>
+  </section>
+
+  <section class="panel" aria-labelledby="ck-title">
+    <h2 id="ck-title">Karton prüfen</h2>
+    <form class="form" id="ck-form" autocomplete="off">
+      <div class="field"><label for="ck-a">Maß 1</label><input id="ck-a" type="number" inputmode="decimal" min="1" step="0.1" value="360"></div>
+      <span class="times">×</span>
+      <div class="field"><label for="ck-b">Maß 2</label><input id="ck-b" type="number" inputmode="decimal" min="1" step="0.1" value="236"></div>
+      <span class="times">×</span>
+      <div class="field"><label for="ck-c">Maß 3</label><input id="ck-c" type="number" inputmode="decimal" min="1" step="0.1" value="128"></div>
+      <span class="unit">mm, Reihenfolge egal</span>
+    </form>
+    <div class="result" id="ck-result" aria-live="polite"></div>
+    <div class="loadrow">
+      <div class="field" style="min-width:0">
+        <label for="load-in">Gespeichertes Muster laden</label>
+        <textarea id="load-in" rows="1" spellcheck="false" placeholder="z. B. X(1x1x1:hlw,2x1x2:wlh) oder eine ganze Zeile „when … then N | Muster“"></textarea>
+      </div>
+      <button type="button" class="btn" id="load-btn" style="margin-top:19px">Laden</button>
+    </div>
+    <span class="err" id="load-err" hidden></span>
+  </section>
+
+  <section class="panel viewer" id="viewer" aria-labelledby="v-title" aria-live="polite">
+    <div class="v-head">
+      <div>
+        <div class="eyebrow" id="v-eyebrow">Packmuster</div>
+        <div class="v-dims" id="v-title"></div>
+        <div class="v-meta" id="v-meta"></div>
+      </div>
+      <button type="button" class="btn small" id="v-back" hidden>Zurück zu deinem Karton</button>
+    </div>
+    <div class="v-note" id="v-note" hidden></div>
+    <div class="codebox">
+      <span class="lab">Regel</span><code id="v-rule"></code><button type="button" class="btn small" data-copy="v-rule">Kopieren</button>
+      <span class="lab">Muster</span><code id="v-pat"></code><button type="button" class="btn small" data-copy="v-pat">Kopieren</button>
+    </div>
+    <div class="v-grid">
+      <div class="svgbox" id="v-svg"></div>
+      <div class="side">
+        <div class="legend" id="v-legend"></div>
+        <div class="axis">L = Bin-Länge · B = Bin-Breite · H = Höhe · l ≥ w ≥ h sind die Kartonkanten</div>
+        <div class="stepper" id="v-stepper">
+          <label for="step">Packreihenfolge</label>
+          <input id="step" type="range" min="1" max="1" value="1">
+          <output id="step-out" for="step"></output>
+        </div>
+        <ol class="clist" id="v-list"></ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="rules" aria-labelledby="r-title">
+    <h2 id="r-title">Regeln für diesen Bin</h2>
+    <p>Jede Regel beschreibt, wann ein bestimmtes Packmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Liste deckt alle Kartons in ganzen Millimetern ab.</p>
+    <div class="gen-row">
+      <div class="field"><label for="g-nmax">Höchstanzahl</label><input id="g-nmax" type="number" min="2" max="60" step="1" value="30"></div>
+      <div class="field"><label for="g-quality">Genauigkeit</label>
+        <select id="g-quality">
+          <option value="fast">Schnell, etwa 1 Minute</option>
+          <option value="std" selected>Standard, etwa 3 Minuten</option>
+          <option value="full">Gründlich, 10 bis 20 Minuten</option>
+        </select>
+      </div>
+      <button type="button" class="btn primary" id="g-start">Regeln berechnen</button>
+      <button type="button" class="btn" id="g-stop" hidden>Abbrechen</button>
+    </div>
+    <div class="progress" id="g-progress" hidden>
+      <div class="bar"><i id="g-bar"></i></div>
+      <div class="note" id="g-status"></div>
+    </div>
+    <div class="note" id="g-source"></div>
+    <div id="r-body" hidden>
+      <div class="stats" id="r-stats"></div>
+      <div>
+        <div class="hist" id="r-hist" role="group" aria-label="Regeln je Anzahl, zum Filtern anklicken"></div>
+        <div class="hist-axis" id="r-hist-axis"></div>
+      </div>
+      <div class="gen-row">
+        <div class="field"><label for="r-filter">Anzahl</label><select id="r-filter"></select></div>
+        <button type="button" class="btn" id="r-copy-all">Regeln mit Mustern kopieren</button>
+        <button type="button" class="btn" id="r-copy-rules">Nur Regeln kopieren</button>
+        <button type="button" class="btn" id="r-download">Als Textdatei speichern</button>
+        <span class="note" id="r-copy-note"></span>
+      </div>
+      <div class="listbox">
+        <table class="rules">
+          <thead><tr><th scope="col">Regel</th><th scope="col">Größter Karton</th><th scope="col">Muster</th><th scope="col"><span class="note">Anzeigen</span></th></tr></thead>
+          <tbody id="r-list"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel notes" aria-labelledby="n-title">
+    <h2 id="n-title">So entstehen die Regeln</h2>
+    <ul>
+      <li><b>Muster statt Einzelwerte.</b> Alle Kombinationen in 1-mm-Schritten wären rund 16 Millionen Kartons. Stattdessen sucht der Rechner Packmuster. Aus jedem Muster folgen Bedingungen der Form „Summe von Kartonkanten ≤ Bin-Maß“, und die gelten für einen ganzen Bereich von Kartongrößen. Einige hundert bis gut tausend solcher Bereiche decken alle Kartons ab.</li>
+      <li><b>Start mit einfachen Gittern.</b> Alle Muster der Form „a × b × c gleich gedrehte Kartons“ sind sofort als Regeln bekannt.</li>
+      <li><b>Abtasten entlang von Linien.</b> Der Rechner hält zwei Kanten fest und lässt die dritte laufen. Überall, wo laut Regelliste die Anzahl sinkt, prüft er mit dem Löser, ob dort nicht doch mehr passen. Findet er ein besseres Muster, schiebt er den Karton so weit hinaus, wie das Muster noch trägt, und nimmt es als neue Regel auf. Erst auf festen Rastern, dann auf zufälligen Linien, bis lange nichts Neues mehr kommt.</li>
+      <li><b>Drei Arten von Mustern.</b> Blockmuster teilen den Bin in Blöcke aus gleich gedrehten Kartons. Lagenmuster wiederholen eine zweidimensional verschränkte Lage, etwa eine Windmühle. Freie Muster sind beliebig verschränkt und werden mit einer Suche gefunden.</li>
+      <li><b>Aufräumen.</b> Regeln, deren Bereich ganz in einer anderen Regel mit mindestens gleicher Anzahl liegt, fallen weg. Übrig bleiben nur Regeln, die für mindestens einen Karton in ganzen Millimetern den Ausschlag geben.</li>
+      <li><b>Verlässlichkeit.</b> Jede Regel ist durch ihr Muster belegt, eine Regel zeigt also nie zu viel. Die Liste kann an einzelnen Stellen zu wenig zeigen, wenn es ein Muster gibt, das der Rechner nicht gefunden hat. „Karton prüfen“ sucht für einen einzelnen Karton gründlicher und kann das Muster dann als Regel übernehmen.</li>
+    </ul>
+    <h2>Textform der Muster</h2>
+    <ul>
+      <li><code>2x1x3:wlh</code> ist ein Block: 2 Kartons entlang der Bin-Länge, 1 entlang der Breite, 3 übereinander. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. <code>wlh</code> heißt: w entlang der Länge, l entlang der Breite, h nach oben, der Karton liegt also flach.</li>
+      <li><code>X(…,…)</code> legt Teile entlang der Bin-Länge hintereinander, <code>Y(…)</code> entlang der Breite, <code>Z(…)</code> übereinander. Gruppen lassen sich schachteln, etwa <code>X(1x1x1:hlw,2x1x2:wlh)</code>.</li>
+      <li><code>B(hlw; wlh x1; lhw x1 z2)</code> ist eine Kartonliste für verschränkte Muster. Jeder Eintrag nennt die Lage und optional Vorgänger: <code>x1</code> heißt „entlang der Länge hinter Karton 1“, <code>z2</code> „auf Karton 2“. Die Position ergibt sich jeweils aus dem weitesten Vorgänger.</li>
+      <li>Zum Laden kannst du das Muster allein oder die ganze Zeile „when … then N | Muster“ einfügen. Das Muster ist unabhängig von den Maßen: Beim Laden rechnet die Seite die Regel für den eingestellten Bin neu aus.</li>
+    </ul>
+  </section>
+</div>
+
+<textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
+
+<script src="packcore.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
