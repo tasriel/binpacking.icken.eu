@@ -9,16 +9,24 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2026-10-02.3">
 </head>
 <body>
 <div class="wrap">
   <header>
     <span class="eyebrow">Gleiche Kartons · Maße in mm · jeder Karton darf beliebig gedreht werden</span>
     <h1>Wie viele Kartons passen in den Bin, und nach welchem Muster?</h1>
-    <p class="lede">Stelle zuerst die Innenmaße des Bins ein. Darunter prüfst du einzelne Kartons, lädst gespeicherte Packmuster und bekommst die Regelliste im Format „when … then N“, jede Regel mit einem Packmuster als Beleg.</p>
+    <p class="lede">Wähle die Art des Bins und stelle seine Innenmaße ein. Darunter prüfst du einzelne Kartons und lädst gespeicherte Packmuster. Für Quader-Bins gibt es außerdem die Regelliste im Format „when … then N“.</p>
   </header>
 
+  <div class="v-note" id="file-note" hidden>Du hast die Seite direkt als Datei geöffnet. So fehlen die vorberechneten Regellisten, und die Seite rechnet im Vordergrund und reagiert dabei träge. Starte im Ordner <code>python3 -m http.server 8000</code> und öffne <code>http://localhost:8000</code>.</div>
+
+  <div class="tabbar" role="tablist" aria-label="Art des Bins">
+    <button type="button" role="tab" id="tabbtn-box" data-tab="box" aria-controls="tab-box" aria-selected="true">Quader-Bin</button>
+    <button type="button" role="tab" id="tabbtn-cone" data-tab="cone" aria-controls="tab-cone" aria-selected="false">Konischer Bin</button>
+  </div>
+
+  <div class="tabpanel" id="tab-box" role="tabpanel" aria-labelledby="tabbtn-box">
   <section class="binbox" aria-labelledby="bin-title">
     <h2 id="bin-title">Bin innen</h2>
     <form class="form" id="bin-form" autocomplete="off">
@@ -43,6 +51,7 @@
       <span class="unit">mm, Reihenfolge egal</span>
     </form>
     <div class="result" id="ck-result" aria-live="polite"></div>
+    <p class="note">Sofort erscheint die schnelle Rechnung mit Blockmustern. „Genau rechnen“ sucht einige Sekunden nach verschränkten Mustern und prüft, ob mehr Kartons passen.</p>
     <div class="loadrow">
       <div class="field" style="min-width:0">
         <label for="load-in">Gespeichertes Muster laden</label>
@@ -142,11 +151,118 @@
       <li>Zum Laden kannst du das Muster allein oder die ganze Zeile „when … then N | Muster“ einfügen. Das Muster ist unabhängig von den Maßen: Beim Laden rechnet die Seite die Regel für den eingestellten Bin neu aus.</li>
     </ul>
   </section>
+  </div>
+
+  <div class="tabpanel" id="tab-cone" role="tabpanel" aria-labelledby="tabbtn-cone" hidden>
+  <section class="binbox conebox" aria-labelledby="cb-title">
+    <h2 id="cb-title">Konischer Bin innen</h2>
+    <form id="cb-form" autocomplete="off">
+      <div class="groups">
+        <fieldset>
+          <legend>Öffnung mit geradem Rand</legend>
+          <div class="form">
+            <div class="field"><label for="cb-topL">Länge</label><input id="cb-topL" type="number" inputmode="decimal" min="1" step="0.1" value="558"></div>
+            <span class="times">×</span>
+            <div class="field"><label for="cb-topW">Breite</label><input id="cb-topW" type="number" inputmode="decimal" min="1" step="0.1" value="374"></div>
+            <div class="field"><label for="cb-rimH">Randhöhe</label><input id="cb-rimH" type="number" inputmode="decimal" min="0" step="0.1" value="65"></div>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Boden</legend>
+          <div class="form">
+            <div class="field"><label for="cb-botL">Länge</label><input id="cb-botL" type="number" inputmode="decimal" min="1" step="0.1" value="515"></div>
+            <span class="times">×</span>
+            <div class="field"><label for="cb-botW">Breite</label><input id="cb-botW" type="number" inputmode="decimal" min="1" step="0.1" value="336"></div>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Konischer Teil</legend>
+          <div class="form">
+            <div class="field"><label for="cb-coneH">Höhe</label><input id="cb-coneH" type="number" inputmode="decimal" min="0" step="0.1" value="344"></div>
+            <span class="unit">mm</span>
+          </div>
+        </fieldset>
+        <button type="button" class="btn small" id="cb-reset">Zurücksetzen auf Zeichnung</button>
+      </div>
+    </form>
+    <div class="facts" id="cb-facts"></div>
+    <span class="err" id="cb-err" hidden></span>
+  </section>
+
+  <section class="panel" aria-labelledby="cc-title">
+    <h2 id="cc-title">Karton prüfen</h2>
+    <form class="form" id="cc-form" autocomplete="off">
+      <div class="field"><label for="cc-a">Maß 1</label><input id="cc-a" type="number" inputmode="decimal" min="1" step="0.1" value="360"></div>
+      <span class="times">×</span>
+      <div class="field"><label for="cc-b">Maß 2</label><input id="cc-b" type="number" inputmode="decimal" min="1" step="0.1" value="236"></div>
+      <span class="times">×</span>
+      <div class="field"><label for="cc-c">Maß 3</label><input id="cc-c" type="number" inputmode="decimal" min="1" step="0.1" value="128"></div>
+      <span class="unit">mm, Reihenfolge egal</span>
+    </form>
+    <div class="result" id="cc-result" aria-live="polite"></div>
+    <p class="note">Sofort erscheint die schnelle Rechnung mit Lagen aus Blockmustern. „Genau rechnen“ sucht einige Sekunden nach besseren Mustern.</p>
+    <div class="loadrow">
+      <div class="field" style="min-width:0">
+        <label for="cc-load-in">Gespeichertes Muster laden</label>
+        <textarea id="cc-load-in" rows="1" spellcheck="false" placeholder="z. B. K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)"></textarea>
+      </div>
+      <button type="button" class="btn" id="cc-load-btn" style="margin-top:19px">Laden</button>
+    </div>
+    <span class="err" id="cc-load-err" hidden></span>
+  </section>
+
+  <section class="panel viewer" id="cc-viewer" aria-labelledby="cv-title" aria-live="polite">
+    <div class="v-head">
+      <div>
+        <div class="eyebrow" id="cv-eyebrow">Packmuster</div>
+        <div class="v-dims" id="cv-title"></div>
+        <div class="v-meta" id="cv-meta"></div>
+      </div>
+      <button type="button" class="btn small" id="cv-back" hidden>Zurück zu deinem Karton</button>
+    </div>
+    <div class="v-note" id="cv-note" hidden></div>
+    <div class="codebox one">
+      <span class="lab">Muster</span><code class="long" id="cv-pat"></code><button type="button" class="btn small" data-copy="cv-pat">Kopieren</button>
+    </div>
+    <div class="v-grid">
+      <div class="svgbox" id="cv-svg"></div>
+      <div class="side">
+        <div class="legend" id="cv-legend"></div>
+        <div class="axis">L und B ab der Ecke der oberen Öffnung, H ab dem Boden · l ≥ w ≥ h sind die Kartonkanten</div>
+        <div class="stepper" id="cv-stepper">
+          <label for="cv-step">Packreihenfolge</label>
+          <input id="cv-step" type="range" min="1" max="1" value="1">
+          <output id="cv-step-out" for="cv-step"></output>
+        </div>
+        <ol class="clist" id="cv-list"></ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel notes" aria-labelledby="cn-title">
+    <h2 id="cn-title">So wird der konische Bin gerechnet</h2>
+    <ul>
+      <li><b>Form.</b> Unten ist der Bin so groß wie der Boden, bis zur Höhe des konischen Teils wird er gleichmäßig weiter, darüber bleibt er so groß wie die Öffnung. Die Wände sind auf gegenüberliegenden Seiten gleich geneigt. Alle sechs Maße sind Eingabefelder und werden in diesem Browser gespeichert.</li>
+      <li><b>Was ein gültiges Muster ist.</b> Kartons stehen gerade, nicht gekippt. Die Grundfläche eines Kartons muss in den Querschnitt auf Höhe seiner Unterkante passen. Jeder Karton liegt auf dem Boden oder auf einem anderen Karton auf, mindestens 1 mm in beiden Richtungen. Wie viel Auflage der am schlechtesten gestützte Karton hat, steht beim Ergebnis.</li>
+      <li><b>Lagen.</b> Der Rechner teilt den Bin waagerecht in Lagen. Jede Lage ist ein Quader mit dem Querschnitt an ihrer Unterkante und wird wie im Reiter „Quader-Bin“ gepackt, auch gemischt und verschränkt. Obere Lagen sind breiter und fassen deshalb oft mehr Kartons. Eine Rechnung über alle möglichen Höhen wählt die beste Folge von Lagen, bei der jeder Karton aufliegt.</li>
+      <li><b>Schnell und genau.</b> Sofort erscheint die schnelle Rechnung: Lagen aus Blockmustern. „Genau rechnen“ sucht einige Sekunden weiter, erst nach verschränkten Lagen, dann frei im Konus nach Mustern, die sich nicht in Lagen zerlegen lassen.</li>
+      <li><b>Wie sicher das Ergebnis ist.</b> „Optimal“ heißt: Eine rechnerische Obergrenze ist erreicht. „Vollständig durchsucht“ heißt: Die freie Suche hat alle Anordnungen durchprobiert, bei denen Kartons bündig an Wänden oder aneinander liegen, und keinen Platz für einen weiteren gefunden. „Offen“ heißt: Auch die genaue Rechnung konnte einen Karton mehr nicht ausschließen.</li>
+    </ul>
+    <h2>Textform der Muster</h2>
+    <ul>
+      <li><code>K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)</code> nennt zuerst die Kartonmaße, dann jeden Karton mit Lage und Position. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter <code>@</code> stehen x, y und z der Ecke in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden.</li>
+      <li>Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße und meldet, wenn ein Karton durch die Wand stößt, einen anderen schneidet oder nirgends aufliegt.</li>
+    </ul>
+  </section>
+  </div>
 </div>
 
 <textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
 
-<script src="packcore.js"></script>
-<script src="app.js"></script>
+<!-- Nach jeder Änderung an CSS oder JavaScript die Kennung v=… überall in dieser Datei erhöhen, sonst zeigen Browser alte Dateien aus dem Zwischenspeicher. -->
+<script src="packcore.js?v=2026-10-02.3"></script>
+<script src="cone.js?v=2026-10-02.3"></script>
+<script src="app.js?v=2026-10-02.3"></script>
+<script src="cone-app.js?v=2026-10-02.3"></script>
 </body>
 </html>

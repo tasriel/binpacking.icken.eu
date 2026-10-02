@@ -553,6 +553,13 @@ function simplifyTree(nd) {
 }
 
 /**
+ * @typedef {{count: number, tree: TreeNode | null, heights: number[],
+ *   at: (iz: number) => {count: number, tree: TreeNode | null},
+ *   cellCount: (X: number, Y: number, Z: number) => number,
+ *   cellTree: (X: number, Y: number, Z: number) => TreeNode | null}} DpTable
+ */
+
+/**
  * Bestes Blockmuster (Schnitte durch den ganzen Block, rekursiv).
  * @param {number[]} c Karton, ganzzahlig, Reihenfolge = Kantenindex
  * @param {number[]} B Bin, ganzzahlig
@@ -560,17 +567,30 @@ function simplifyTree(nd) {
  * @returns {{count: number, tree: TreeNode | null} | null}
  */
 function dpSolve(c, B, force) {
+  const t = dpTable(c, B, force);
+  return t ? { count: t.count, tree: t.tree } : null;
+}
+
+/**
+ * Wie dpSolve, liefert zusätzlich das beste Blockmuster für jede Teilhöhe
+ * heights[iz] bei voller Länge und Breite. Das braucht der konische Bin.
+ * @param {number[]} c @param {number[]} B @param {boolean} force
+ * @param {number} [vertical] nur Kartons zulassen, deren senkrechte Kante so lang ist
+ * @returns {DpTable | null}
+ */
+function dpTable(c, B, force, vertical) {
   /** @type {{d: number[], p: number[]}[]} */ const ors = [];
   /** @type {Set<string>} */ const seen = new Set();
   for (const p of PERMS) {
     const d = [c[p[0]], c[p[1]], c[p[2]]];
     if (d[0] > B[0] || d[1] > B[1] || d[2] > B[2]) continue;
+    if (vertical !== undefined && d[2] !== vertical) continue;
     const key = d.join(",");
     if (seen.has(key)) continue;
     seen.add(key);
     ors.push({ d, p });
   }
-  if (!ors.length) return { count: 0, tree: null };
+  if (!ors.length) return { count: 0, tree: null, heights: [0], at: () => ({ count: 0, tree: null }), cellCount: () => 0, cellTree: () => null };
   const dims = [...new Set(c)];
   const sx = normalSet(B[0], dims), sy = normalSet(B[1], dims), sz = normalSet(B[2], dims);
   const VX = sx.vals, VY = sy.vals, VZ = sz.vals, PX = sx.prevIdx, PY = sy.prevIdx, PZ = sz.prevIdx;
@@ -627,8 +647,20 @@ function dpSolve(c, B, force) {
     /** @type {TreeNode[]} */ const kids = /** @type {TreeNode[]} */ ([k1, k2].filter(Boolean));
     return kids.length === 1 ? kids[0] : { k: "S", a: t - 1, c: kids };
   };
-  const tree = rec(nx - 1, ny - 1, nz - 1);
-  return { count: f[S - 1], tree: tree ? simplifyTree(tree) : null };
+  /** @param {number} iz @returns {{count: number, tree: TreeNode | null}} */
+  const at = (iz) => {
+    const tree = rec(nx - 1, ny - 1, iz);
+    return { count: f[(nx - 1) * syz + (ny - 1) * nz + iz], tree: tree ? simplifyTree(tree) : null };
+  };
+  const top = at(nz - 1);
+  /** Bestes Blockmuster für einen Teilquader X x Y x Z (wird auf mögliche Kantensummen abgerundet) */
+  /** @param {number} X @param {number} Y @param {number} Z @returns {number[] | null} */
+  const idx = (X, Y, Z) => (X < 0 || Y < 0 || Z < 0 ? null : [PX[Math.min(X, B[0])], PY[Math.min(Y, B[1])], PZ[Math.min(Z, B[2])]]);
+  /** @param {number} X @param {number} Y @param {number} Z @returns {number} */
+  const cellCount = (X, Y, Z) => { const i = idx(X, Y, Z); return i ? f[i[0] * syz + i[1] * nz + i[2]] : 0; };
+  /** @param {number} X @param {number} Y @param {number} Z @returns {TreeNode | null} */
+  const cellTree = (X, Y, Z) => { const i = idx(X, Y, Z); const t = i ? rec(i[0], i[1], i[2]) : null; return t ? simplifyTree(t) : null; };
+  return { count: top.count, tree: top.tree, heights: VZ, at, cellCount, cellTree };
 }
 
 /**
@@ -1470,7 +1502,7 @@ function rulesToText(bin, nmax, rules, withPattern) {
 if (typeof module !== "undefined") {
   module.exports = {
     PERMS, termLE, pruneTerms, treeTerms, dagTerms, patternTerms, patternCount, patternLayout, patternRule, pruneCons,
-    consHold, ruleText, consText, termText, patternString, parsePattern, dpSolve, upperBoundInt, searchPack,
+    consHold, ruleText, consText, termText, patternString, parsePattern, dpSolve, dpTable, normalSet, upperBoundInt, searchPack,
     portfolioSearch, dagFromPlacements, analyzeCarton, generateRules, layeredSearch, patternHasDag, QUALITY_PRESETS,
     genOptions, binKeyOf, packRulesData, unpackRules, rulesToText, numText, dot, vol, regionVertices, lookupRules,
     exampleCarton, verticesInside, reduceTree, bestGrid

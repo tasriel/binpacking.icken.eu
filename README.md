@@ -10,6 +10,13 @@ Die Webseite in diesem Repository
 
 Kartons dürfen beliebig gedreht werden, auch jeder Karton anders. Alle Maße sind Innenmaße in mm.
 
+„Karton prüfen“ zeigt in beiden Reitern sofort eine schnelle Rechnung (nur Blockmuster). Der Knopf „Genau rechnen“ startet die Suche nach verschränkten Mustern, im Quader-Bin bis zu 6 Sekunden (`EXACT_MS` in `app.js`), im konischen Bin bis zu 8 Sekunden (`CONE_EXACT_MS` in `cone-app.js`).
+
+Die Seite hat zwei Reiter:
+
+- **Quader-Bin:** gerade Wände. Karton prüfen, Muster laden, Regelliste.
+- **Konischer Bin:** unten schmaler als oben, mit geradem Rand an der Öffnung. Karton prüfen und Muster laden. Siehe [Konischer Bin](#konischer-bin).
+
 Für die Bins **603 × 403 × 404** und **603 × 403 × 312** liegen fertige Regellisten in [`rules/`](rules/).
 
 ## Schnellstart
@@ -21,6 +28,8 @@ python3 -m http.server 8000
 ```
 
 Dann <http://localhost:8000> öffnen. Direkt als Datei (`file://`) funktionieren die Hintergrundrechnung und das Laden der Regellisten nicht.
+
+Nach Änderungen an CSS oder JavaScript die Kennung `v=…` in `index.html` erhöhen (Stylesheet und die vier Script-Tags). Sie hängt auch am Worker und seinen Dateien. Ohne neue Kennung zeigen Browser oft noch die alten Dateien aus dem Zwischenspeicher; dann hilft neu laden mit Strg+Umschalt+R.
 
 Die beiden Werkzeuge in `tools/` brauchen nur Node.js 18 oder neuer, kein `npm install`.
 
@@ -81,6 +90,50 @@ Stichproben mit `tools/validate-rules.js` für die mitgelieferten Listen (Genaui
 
 Alle Regeln wurden an der Ecke und an Zufallspunkten ihres Bereichs nachgebaut, ohne Überschneidung oder Überstand. Findet „Karton prüfen“ für einen Karton mehr als die Liste, lässt sich das Muster auf der Seite per Klick als Regel übernehmen. Solche Ergänzungen speichert die Seite im Browser.
 
+## Konischer Bin
+
+Der zweite Reiter rechnet für einen Bin, der sich nach unten verjüngt. Sechs Maße beschreiben ihn, alle sind Eingabefelder und werden im Browser gespeichert:
+
+| Maß | Voreinstellung |
+|---|---|
+| Öffnung oben, Länge × Breite | 558 × 374 mm |
+| Höhe des geraden Rands unter der Öffnung | 65 mm |
+| Boden, Länge × Breite | 515 × 336 mm |
+| Höhe des konischen Teils | 344 mm |
+
+Die Voreinstellung steht in `cone.js` als `CONE_DEFAULT`. Der Bin ist symmetrisch: gegenüberliegende Wände sind gleich geneigt.
+
+**Gültiges Muster**
+
+- Kartons stehen gerade, nicht gekippt.
+- Die Grundfläche eines Kartons muss in den Querschnitt auf Höhe seiner Unterkante passen. Weiter oben ist der Bin nur breiter.
+- Kartons überschneiden sich nicht.
+- Jeder Karton liegt auf dem Boden oder auf einem anderen Karton auf, mindestens 1 mm in beiden Richtungen (`CONE_SUPPORT`). Die kleinste Auflage im Muster zeigt die Seite an.
+
+**Lösungsweg**
+
+1. **Lagen.** Der Bin wird waagerecht in Lagen geteilt. Jede Lage ist ein Quader mit dem Querschnitt an ihrer Unterkante und wird mit dem Quader-Löser gepackt, auch gemischt und verschränkt. Eine dynamische Programmierung über alle möglichen Höhen (Summen von Kartonkanten) wählt die beste Folge. Zwei Lagen werden nur kombiniert, wenn jeder Karton der oberen auf der unteren aufliegt. Bei gleicher Anzahl gewinnt die Folge mit der besseren Auflage.
+2. **Absenken und prüfen.** Die Lagen werden mittig gesetzt, jeder Karton fällt senkrecht bis zur Auflage. Das Ergebnis wird vollständig geprüft (Wände, Überschneidung, Auflage).
+3. **Freie Suche.** Eine Tiefensuche direkt im Konus versucht, einen Karton mehr unterzubringen, auch mit Mustern, die sich nicht in Lagen zerlegen lassen. Sie probiert Positionen, an denen Kartons bündig an einer Wand oder an anderen Kartons liegen.
+
+**Wie sicher das Ergebnis ist**
+
+- *Optimal:* Eine rechnerische Obergrenze ist erreicht. Die Obergrenze nutzt, dass jede Unterkante auf einer Summe von Kartonkanten liegt und in jeder waagerechten Scheibe nur Summen von Kartonkanten nebeneinander passen.
+- *Vollständig durchsucht:* Die freie Suche hat alle bündigen Anordnungen mit einem Karton mehr durchprobiert und nichts gefunden.
+- *Offen:* Ein Karton mehr ist nicht ausgeschlossen.
+
+Im Vergleich mit einem exakten Löser (CP-SAT) an 24 Kartons mit 4 bis 12 Stück stimmte das Ergebnis in 18 von 19 entschiedenen Fällen überein, einmal lag es um einen Karton darunter. Der Fall war ein Muster, das sich nicht in Lagen zerlegen lässt.
+
+**Textform**
+
+```
+K(360x236x128; whl@43,59,0; whl@279,59,0; whl@43,187,0; whl@279,187,0)
+```
+
+Zuerst die Kartonmaße, dann jeder Karton mit Lage und Ecke. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter `@` stehen x, y, z in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden. Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße.
+
+Regeln im Format `when … then N` gibt es für den konischen Bin nicht. Dort hängt die Wandposition von der Höhe jedes Kartons ab, die Bedingungen wären keine einfachen Summen mehr.
+
 ## Regeln erzeugen und prüfen
 
 Auf der Seite: Bin-Maße eintragen, Genauigkeit wählen, „Regeln berechnen“. Das läuft im Hintergrund und wird nur im Browser gespeichert. „Als Textdatei speichern“ lädt jede Liste als Text herunter.
@@ -111,9 +164,11 @@ Die Seite lädt eine Liste aus `rules/` automatisch, sobald die passenden Bin-Ma
 ```
 index.html            Seite
 style.css             Gestaltung, helles und dunkles Farbschema
-app.js                Bedienung der Seite
-worker.js             Hintergrundrechnung (lädt packcore.js)
-packcore.js           Rechenkern: Löser, Muster, Regeln, Textform, Regelerzeugung (Browser und Node)
+app.js                Bedienung: Reiter, Quader-Bin, Zeichnung
+cone-app.js           Bedienung: Reiter „Konischer Bin“
+worker.js             Hintergrundrechnung (lädt packcore.js und cone.js)
+packcore.js           Rechenkern Quader: Löser, Muster, Regeln, Textform, Regelerzeugung (Browser und Node)
+cone.js               Rechenkern konischer Bin: Geometrie, Lagen, Absenken, freie Suche, Textform (Browser und Node)
 rules/                vorberechnete Regellisten, index.json listet die vorhandenen Bins
 tools/
   generate-rules.js   Regelliste erzeugen (Node)

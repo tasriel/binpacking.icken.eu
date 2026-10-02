@@ -36,13 +36,47 @@ const state = {
 const binKey = (/** @type {number[]} */ b) => binKeyOf(b);
 
 /* ---------- Rechenkern im Hintergrund ---------- */
-/** @param {(d: any) => void} onMsg @returns {Worker | null} */
-function makeWorker(onMsg) {
+/** Versionskennung aus dem Script-Tag (app.js?v=…). Sie hängt an allen nachgeladenen Dateien, damit der Browser nach einer Änderung nichts Altes aus dem Zwischenspeicher nimmt. */
+const APP_VERSION = (() => {
+  const s = /** @type {HTMLScriptElement | null} */ (document.currentScript);
+  const m = s ? /[?&]v=([^&]+)/.exec(s.src) : null;
+  return m ? m[1] : "";
+})();
+/**
+ * @param {(d: any) => void} onMsg @param {() => void} [onFail] Worker konnte nicht starten
+ * @returns {Worker | null}
+ */
+function makeWorker(onMsg, onFail) {
   try {
-    const w = new Worker("worker.js");
+    const w = new Worker("worker.js" + (APP_VERSION ? "?v=" + APP_VERSION : ""));
     w.onmessage = (e) => onMsg(e.data);
+    if (onFail) w.onerror = (e) => { e.preventDefault(); onFail(); };
     return w;
   } catch (e) { return null; }
+}
+/**
+ * Startet eine Rechnung im Hintergrund. Startet der Worker nicht oder meldet er sich
+ * nicht (zum Beispiel, wenn die Seite als Datei geöffnet ist), rechnet die Seite selbst.
+ * Bleibt das Endergebnis aus, bricht die Rechnung nach der Rechenzeit plus Reserve ab.
+ * @param {object} msg Auftrag an den Worker
+ * @param {(d: any) => void} onMsg Ergebnis oder Zwischenergebnis
+ * @param {() => void} local dieselbe Rechnung ohne Worker
+ * @param {(d: any) => boolean} isFinal erkennt das Endergebnis
+ * @param {number} budgetMs Rechenzeit des Auftrags
+ * @param {() => void} onTimeout Endergebnis blieb aus
+ * @returns {{stop: () => void}}
+ */
+function startJob(msg, onMsg, local, isFinal, budgetMs, onTimeout) {
+  let done = false, got = false, first = 0, last = 0;
+  /** @type {Worker | null} */ let w = null;
+  const stop = () => { done = true; clearTimeout(first); clearTimeout(last); if (w) { w.terminate(); w = null; } };
+  const fail = () => { if (done) return; stop(); setTimeout(local, 20); };
+  w = makeWorker((d) => { if (done) return; got = true; if (isFinal(d)) stop(); onMsg(d); }, fail);
+  if (!w) { done = true; setTimeout(local, 20); return { stop: () => {} }; }
+  w.postMessage(msg);
+  first = window.setTimeout(() => { if (!got) fail(); }, 5000);
+  last = window.setTimeout(() => { if (!done) { stop(); onTimeout(); } }, budgetMs + 6000);
+  return { stop };
 }
 let seq = 0;
 
@@ -80,7 +114,7 @@ function storageKey() { return "kartonregeln:" + binKey(state.bin); }
 /** @returns {Promise<string[]>} Bins mit vorberechneter Liste (rules/index.json) */
 function fetchPreIndex() {
   if (!preIndex) {
-    preIndex = fetch("rules/index.json").then((r) => (r.ok ? r.json() : [])).then((a) => (Array.isArray(a) ? a.map(String) : [])).catch(() => []);
+    preIndex = fetch("rules/index.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : [])).then((a) => (Array.isArray(a) ? a.map(String) : [])).catch(() => []);
   }
   return preIndex;
 }
@@ -90,7 +124,7 @@ async function fetchPre(key) {
   let data = null;
   if ((await fetchPreIndex()).includes(key)) {
     try {
-      const res = await fetch(`rules/${encodeURIComponent(key)}.json`);
+      const res = await fetch(`rules/${encodeURIComponent(key)}.json`, { cache: "no-cache" });
       if (res.ok) data = await res.json();
     } catch (e) { data = null; }
   }
@@ -139,18 +173,30 @@ function lookup(c) {
 }
 
 /* ---------- Karton prüfen ---------- */
-let checkWorker = /** @type {Worker | null} */ (null);
-function startCheck() {
+let checkJob = /** @type {{stop: () => void} | null} */ (null);
+/** Rechenzeit für „Genau rechnen“ in ms. Die schnelle Rechnung nutzt nur Blockmuster. */
+const EXACT_MS = 6000;
+/** @param {boolean} [exact] true = mit Suche nach verschränkten Mustern */
+function startCheck(exact = false) {
   const dims = readNums(["#ck-a", "#ck-b", "#ck-c"]);
   if (!dims) { state.carton = null; state.check = null; renderResult(); showCheckView(); return; }
   state.carton = [...dims].sort((a, b) => b - a);
   const id = ++seq;
-  state.check = { id, carton: state.carton, count: null, status: "run", pat: null, final: false };
-  if (checkWorker) checkWorker.terminate();
-  checkWorker = makeWorker(onCheckMsg);
-  const msg = { type: "check", id, carton: state.carton, bin: state.bin, budget: 3000 };
-  if (checkWorker) checkWorker.postMessage(msg);
-  else setTimeout(() => { const a = analyzeCarton(msg.carton, msg.bin, 800); onCheckMsg({ type: "check", id, phase: "final", count: a.count, upper: a.upper, status: a.status, pat: a.pattern ? patternString(a.pattern) : null, mixed: a.mixed }); }, 20);
+  const prev = exact ? state.check : null;
+  state.check = prev ? { ...prev, id, mode: "exact", final: false } : { id, carton: state.carton, count: null, status: "run", pat: null, final: false, mode: exact ? "exact" : "quick" };
+  if (checkJob) checkJob.stop();
+  const msg = { type: "check", id, carton: state.carton, bin: state.bin, budget: exact ? EXACT_MS : 0 };
+  const local = () => {
+    if (!state.check || state.check.id !== id) return;
+    const a = analyzeCarton(msg.carton, msg.bin, exact ? 1500 : 0);
+    onCheckMsg({ type: "check", id, phase: "final", count: a.count, upper: a.upper, status: a.status, pat: a.pattern ? patternString(a.pattern) : null, mixed: a.mixed });
+  };
+  const timeout = () => {
+    if (!state.check || state.check.id !== id) return;
+    state.check.final = true;
+    renderResult();
+  };
+  checkJob = startJob(msg, onCheckMsg, local, (d) => d.phase === "final", msg.budget, timeout);
   renderResult();
 }
 /** @param {any} d */
@@ -161,7 +207,7 @@ function onCheckMsg(d) {
   if (!state.view || state.view.kind === "check") showCheckView();
 }
 let ckTimer = 0;
-$("#ck-form").addEventListener("input", () => { clearTimeout(ckTimer); ckTimer = window.setTimeout(startCheck, 350); });
+$("#ck-form").addEventListener("input", () => { clearTimeout(ckTimer); ckTimer = window.setTimeout(() => startCheck(), 350); });
 $("#ck-form").addEventListener("submit", (e) => e.preventDefault());
 
 /** Bestes bekanntes Ergebnis: eigener Löser oder Regelliste */
@@ -184,7 +230,8 @@ function renderResult() {
   let chip;
   if (ck.count == null || !best) chip = `<span class="chip run">rechnet</span>`;
   else if (best.count >= ck.upper || (ck.final && ck.status === "optimal" && best.count >= ck.count)) chip = `<span class="chip ok">optimal, mehr passen nicht</span>`;
-  else if (!ck.final) chip = `<span class="chip run">sucht nach mehr</span>`;
+  else if (!ck.final) chip = ck.mode === "exact" ? `<span class="chip run">rechnet genau</span> <button type="button" class="btn small" id="ck-cancel">Abbrechen</button>` : `<span class="chip run">rechnet</span>`;
+  else if (ck.mode === "quick") chip = `<span class="chip open">schnelle Rechnung, mehr ist möglich</span> <button type="button" class="btn small" id="ck-exact">Genau rechnen</button>`;
   else chip = `<span class="chip open">offen: ${best.count + 1} nicht ausgeschlossen</span>`;
   const count = best && best.count >= 0 ? best.count : "…";
   const parts = [];
@@ -202,6 +249,12 @@ function renderResult() {
 $("#ck-result").addEventListener("click", (e) => {
   const t = /** @type {HTMLElement} */ (e.target);
   if (t.id === "add-rule") addCheckAsRule();
+  if (t.id === "ck-exact") startCheck(true);
+  if (t.id === "ck-cancel" && state.check) {
+    if (checkJob) checkJob.stop();
+    state.check = { ...state.check, id: ++seq, mode: "quick", final: true };
+    renderResult();
+  }
   const sr = t.closest("[data-show-rule]");
   if (sr) showRule(+(/** @type {HTMLElement} */ (sr)).dataset.showRule);
 });
@@ -395,9 +448,16 @@ function depthOrder(items) {
   }
   return out;
 }
-/** @param {number[]} bin @param {any[]} boxes @param {string} label @returns {string} */
-function drawSVG(bin, boxes, label) {
+/**
+ * Zeichnet den Bin mit Kartons. Mit cone wird der Bin konisch gezeichnet:
+ * bin ist dann die Öffnung oben mit Gesamthöhe, cone der Boden und die Höhe des konischen Teils.
+ * @param {number[]} bin @param {any[]} boxes @param {string} label
+ * @param {{botL: number, botW: number, coneH: number}} [cone]
+ * @returns {string}
+ */
+function drawSVG(bin, boxes, label, cone) {
   const [L, W, H] = bin;
+  const ix = cone ? (L - cone.botL) / 2 : 0, iy = cone ? (W - cone.botW) / 2 : 0, hc = cone ? Math.min(cone.coneH, H) : 0;
   const c30 = Math.cos(Math.PI / 6);
   const P = (/** @type {number} */ X, /** @type {number} */ Y, /** @type {number} */ Z) => [(X - Y) * c30, (X + Y) * 0.5 - Z];
   const pts = (/** @type {number[][]} */ arr) => arr.map((p) => P(p[0], p[1], p[2]).map((v) => v.toFixed(1)).join(",")).join(" ");
@@ -407,9 +467,10 @@ function drawSVG(bin, boxes, label) {
   const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad * 0.75, minY = Math.min(...ys) - pad * 0.1, maxY = Math.max(...ys) + pad * 0.4;
   const fs = Math.max(L, W, H) / 25;
   let s = `<svg viewBox="${minX.toFixed(0)} ${minY.toFixed(0)} ${(maxX - minX).toFixed(0)} ${(maxY - minY).toFixed(0)}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(label)}">`;
-  s += `<polygon class="b-floor" points="${pts([[0,0,0],[L,0,0],[L,W,0],[0,W,0]])}"/>`;
-  s += `<polygon class="b-wall" points="${pts([[0,0,0],[0,W,0],[0,W,H],[0,0,H]])}"/>`;
-  s += `<polygon class="b-wall" points="${pts([[0,0,0],[L,0,0],[L,0,H],[0,0,H]])}"/>`;
+  s += `<polygon class="b-floor" points="${pts([[ix,iy,0],[L-ix,iy,0],[L-ix,W-iy,0],[ix,W-iy,0]])}"/>`;
+  s += `<polygon class="b-wall" points="${pts([[ix,iy,0],[ix,W-iy,0],[0,W,hc],[0,W,H],[0,0,H],[0,0,hc]])}"/>`;
+  s += `<polygon class="b-wall" points="${pts([[ix,iy,0],[L-ix,iy,0],[L,0,hc],[L,0,H],[0,0,H],[0,0,hc]])}"/>`;
+  if (cone && hc < H) s += `<polyline class="b-edge" points="${pts([[0,W,hc],[0,0,hc],[L,0,hc]])}"/>`;
   const showNum = boxes.length <= 60;
   for (const it of depthOrder(boxes)) {
     const g = Math.min(4, 0.06 * Math.min(it.dx, it.dy, it.dz));
@@ -426,15 +487,17 @@ function drawSVG(bin, boxes, label) {
     if (showNum) { const c = P((x0 + x1) / 2, (y0 + y1) / 2, z1); s += `<text x="${c[0].toFixed(1)}" y="${(c[1] + fs * 0.35).toFixed(1)}" text-anchor="middle" style="font-size:${fs.toFixed(0)}px">${it.num}</text>`; }
     s += `</g>`;
   }
-  const edges = [[[L,0,0],[L,W,0]],[[0,W,0],[L,W,0]],[[L,W,0],[L,W,H]],[[L,0,0],[L,0,H]],[[0,W,0],[0,W,H]],[[L,0,H],[L,W,H]],[[0,W,H],[L,W,H]]];
+  const edges = [[[L-ix,iy,0],[L-ix,W-iy,0]],[[ix,W-iy,0],[L-ix,W-iy,0]],[[L-ix,W-iy,0],[L,W,hc]],[[L-ix,iy,0],[L,0,hc]],[[ix,W-iy,0],[0,W,hc]],
+    [[L,W,hc],[L,W,H]],[[L,0,hc],[L,0,H]],[[0,W,hc],[0,W,H]],[[L,0,H],[L,W,H]],[[0,W,H],[L,W,H]]];
+  if (cone && hc < H) edges.push([[L,0,hc],[L,W,hc]], [[0,W,hc],[L,W,hc]]);
   for (const [a, b] of edges) {
     const pa = P(a[0], a[1], a[2]), pb = P(b[0], b[1], b[2]);
     s += `<line class="b-edge" x1="${pa[0].toFixed(1)}" y1="${pa[1].toFixed(1)}" x2="${pb[0].toFixed(1)}" y2="${pb[1].toFixed(1)}"/>`;
   }
   const mL = P(L / 2, W, 0), mW = P(L, W / 2, 0), mH = P(0, W, H / 2);
   const st = `style="font-size:${(fs * 0.95).toFixed(0)}px"`;
-  s += `<text class="lbl" ${st} x="${(mL[0] - fs).toFixed(1)}" y="${(mL[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">L ${numText(L)}</text>`;
-  s += `<text class="lbl" ${st} x="${(mW[0] + fs).toFixed(1)}" y="${(mW[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">B ${numText(W)}</text>`;
+  s += `<text class="lbl" ${st} x="${(mL[0] - fs).toFixed(1)}" y="${(mL[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">L ${numText(L)}${cone ? " · unten " + numText(cone.botL) : ""}</text>`;
+  s += `<text class="lbl" ${st} x="${(mW[0] + fs).toFixed(1)}" y="${(mW[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">B ${numText(W)}${cone ? " · unten " + numText(cone.botW) : ""}</text>`;
   s += `<text class="lbl" ${st} x="${(mH[0] - fs * 0.7).toFixed(1)}" y="${(mH[1] + fs * 0.35).toFixed(1)}" text-anchor="end">H ${numText(H)}</text>`;
   return s + "</svg>";
 }
@@ -456,7 +519,7 @@ $("#g-start").addEventListener("click", () => {
   stopGen();
   genId = ++seq;
   const opt = genOptions(qk, nmax);
-  genWorker = makeWorker(onGenMsg);
+  genWorker = makeWorker(onGenMsg, () => { stopGen(); $("#g-source").textContent = "Die Hintergrundberechnung konnte nicht starten. Öffne die Seite über einen Webserver statt als Datei."; });
   if (!genWorker) { $("#g-source").textContent = "Dieser Browser erlaubt keine Hintergrundberechnung. Die Regeln lassen sich hier leider nicht erzeugen."; return; }
   genWorker.postMessage({ type: "gen", id: genId, bin: state.bin, opt, quality: qk });
   $("#g-progress").hidden = false; $("#g-stop").hidden = false;
@@ -566,7 +629,26 @@ function markHit() {
   if (btn) { const tr = btn.closest("tr"); if (tr) tr.classList.add("hit"); }
 }
 
+/* ---------- Reiter ---------- */
+/** @type {Record<string, () => void>} wird beim ersten Öffnen eines Reiters aufgerufen */
+const tabInit = {};
+/** @param {string} name "box" oder "cone" */
+function showTab(name) {
+  for (const t of ["box", "cone"]) {
+    $("#tab-" + t).hidden = t !== name;
+    $("#tabbtn-" + t).setAttribute("aria-selected", String(t === name));
+  }
+  if (tabInit[name]) { const f = tabInit[name]; delete tabInit[name]; f(); }
+  try { history.replaceState(null, "", name === "cone" ? "#konisch" : "#quader"); } catch (e) { /* ohne Verlauf */ }
+  try { localStorage.setItem("kartonregeln:reiter", name); } catch (e) { /* Speicher nicht verfügbar */ }
+}
+document.querySelectorAll(".tabbar [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(/** @type {HTMLElement} */ (b).dataset.tab || "box")));
+
 (function init() {
+  if (location.protocol === "file:") $("#file-note").hidden = false;
   loadRulesForBin();
   startCheck();
+  let tab = "";
+  try { tab = location.hash === "#konisch" ? "cone" : location.hash === "#quader" ? "box" : (localStorage.getItem("kartonregeln:reiter") || ""); } catch (e) { tab = ""; }
+  window.addEventListener("DOMContentLoaded", () => { if (tab === "cone") showTab("cone"); });
 })();
