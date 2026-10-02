@@ -43,7 +43,8 @@ if (typeof module !== "undefined" && typeof dpTable === "undefined") {
 /**
  * @typedef {{carton: number[], count: number, upper: number, status: "optimal" | "searched" | "open",
  *   placements: ConePlacement[], source: "lagen" | "suche" | "leer", removed: number,
- *   bottomCuboid: number, topCuboid: number, final: boolean}} ConeAnalysis
+ *   bottomCuboid: number, topCuboid: number, final: boolean, layers?: string | null}} ConeAnalysis
+ *   layers: Textform als Lagenmuster, wenn das Ergebnis eines ist (setzt cone-rules.js)
  */
 
 const CONE_PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
@@ -233,7 +234,7 @@ function parseCone(input) {
   const s = String(input || "").replace(/\s+/g, "");
   if (!s) throw new Error("Bitte ein Muster einfügen, zum Beispiel K(360x236x128; hlw@0,0,0; wlh@128,0,0).");
   const m = /^K\((.*)\)$/i.exec(s);
-  if (!m) throw new Error("Ein Muster für den konischen Bin beginnt mit K( und endet mit ). Muster mit X(…), Y(…), Z(…) oder B(…) gehören in den Reiter „Quader-Bin“.");
+  if (!m) throw new Error("Ein Muster für den konischen Bin beginnt mit K( und endet mit ). Kartonlisten B(…) gehören in den Reiter „Quader-Bin“.");
   const items = m[1].split(";").filter(Boolean);
   const dm = /^(\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)$/i.exec(items[0] || "");
   if (!dm) throw new Error("Am Anfang müssen die Kartonmaße stehen, zum Beispiel 360x236x128.");
@@ -765,6 +766,6 @@ function analyzeCone(cartonMM, bin, budgetMs, onStep) {
 if (typeof module !== "undefined") {
   module.exports = {
     CONE_DEFAULT, coneHeight, coneLen, coneWid, coneOffset, coneVolume, coneUpper, coneBinError, coneCheck, coneSettle,
-    coneString, parseCone, coneLayers, coneBuild, coneSearch, coneFreeSearch, coneMinSupport, analyzeCone
+    coneString, parseCone, coneLayers, coneBuild, coneSearch, coneFreeSearch, coneMinSupport, analyzeCone, coneNum, CONE_SUPPORT
   };
 }

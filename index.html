@@ -9,14 +9,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=2026-10-02.3">
+<link rel="stylesheet" href="style.css?v=2026-10-02.4">
 </head>
 <body>
 <div class="wrap">
   <header>
     <span class="eyebrow">Gleiche Kartons · Maße in mm · jeder Karton darf beliebig gedreht werden</span>
     <h1>Wie viele Kartons passen in den Bin, und nach welchem Muster?</h1>
-    <p class="lede">Wähle die Art des Bins und stelle seine Innenmaße ein. Darunter prüfst du einzelne Kartons und lädst gespeicherte Packmuster. Für Quader-Bins gibt es außerdem die Regelliste im Format „when … then N“.</p>
+    <p class="lede">Wähle die Art des Bins und stelle seine Innenmaße ein. Darunter prüfst du einzelne Kartons und lädst gespeicherte Packmuster. In beiden Reitern gibt es außerdem die Regelliste im Format „when … then N“.</p>
   </header>
 
   <div class="v-note" id="file-note" hidden>Du hast die Seite direkt als Datei geöffnet. So fehlen die vorberechneten Regellisten, und die Seite rechnet im Vordergrund und reagiert dabei träge. Starte im Ordner <code>python3 -m http.server 8000</code> und öffne <code>http://localhost:8000</code>.</div>
@@ -204,7 +204,7 @@
     <div class="loadrow">
       <div class="field" style="min-width:0">
         <label for="cc-load-in">Gespeichertes Muster laden</label>
-        <textarea id="cc-load-in" rows="1" spellcheck="false" placeholder="z. B. K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)"></textarea>
+        <textarea id="cc-load-in" rows="1" spellcheck="false" placeholder="z. B. K(295x131x86; Z(3x1x1:wlh,4x4x1:whl)) oder eine ganze Zeile „when … then N | Muster“"></textarea>
       </div>
       <button type="button" class="btn" id="cc-load-btn" style="margin-top:19px">Laden</button>
     </div>
@@ -221,7 +221,8 @@
       <button type="button" class="btn small" id="cv-back" hidden>Zurück zu deinem Karton</button>
     </div>
     <div class="v-note" id="cv-note" hidden></div>
-    <div class="codebox one">
+    <div class="codebox">
+      <span class="lab">Regel</span><code class="long" id="cv-rule"></code><button type="button" class="btn small" data-copy="cv-rule">Kopieren</button>
       <span class="lab">Muster</span><code class="long" id="cv-pat"></code><button type="button" class="btn small" data-copy="cv-pat">Kopieren</button>
     </div>
     <div class="v-grid">
@@ -239,6 +240,60 @@
     </div>
   </section>
 
+  <section class="panel" id="cone-rules" aria-labelledby="cr-title">
+    <h2 id="cr-title">Regeln für diesen Bin</h2>
+    <p>Jede Regel beschreibt, wann ein bestimmtes Lagenmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Regeln gelten nur für die oben eingestellten Bin-Maße. Änderst du ein Maß, braucht der Bin eine neue Liste.</p>
+    <div class="gen-row">
+      <div class="field"><label for="cg-nmax">Höchstanzahl</label><input id="cg-nmax" type="number" min="2" max="60" step="1" value="30"></div>
+      <div class="field"><label for="cg-quality">Genauigkeit</label>
+        <select id="cg-quality">
+          <option value="fast">Schnell, etwa 1 Minute</option>
+          <option value="std" selected>Standard, etwa 3 Minuten</option>
+          <option value="full">Gründlich, etwa 5 Minuten</option>
+        </select>
+      </div>
+      <button type="button" class="btn primary" id="cg-start">Regeln berechnen</button>
+      <button type="button" class="btn" id="cg-stop" hidden>Abbrechen</button>
+    </div>
+    <div class="progress" id="cg-progress" hidden>
+      <div class="bar"><i id="cg-bar"></i></div>
+      <div class="note" id="cg-status"></div>
+    </div>
+    <div class="note" id="cg-source"></div>
+    <div id="cr-body" hidden>
+      <div class="stats" id="cr-stats"></div>
+      <div>
+        <div class="hist" id="cr-hist" role="group" aria-label="Regeln je Anzahl, zum Filtern anklicken"></div>
+        <div class="hist-axis" id="cr-hist-axis"></div>
+      </div>
+      <div class="gen-row">
+        <div class="field"><label for="cr-filter">Anzahl</label><select id="cr-filter"></select></div>
+        <button type="button" class="btn" id="cr-copy-all">Regeln mit Mustern kopieren</button>
+        <button type="button" class="btn" id="cr-copy-rules">Nur Regeln kopieren</button>
+        <button type="button" class="btn" id="cr-download">Als Textdatei speichern</button>
+      </div>
+      <div class="listbox">
+        <table class="rules">
+          <thead><tr><th scope="col">Regel</th><th scope="col">Größter Karton</th><th scope="col">Muster</th><th scope="col"><span class="note">Anzeigen</span></th></tr></thead>
+          <tbody id="cr-list"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel notes" aria-labelledby="crn-title">
+    <h2 id="crn-title">So liest du die Regeln</h2>
+    <ul>
+      <li><b>Lagenmuster.</b> Jede Regel gehört zu einem Muster aus Lagen. Alle Lagen bis auf die oberste sind oben eben, damit die nächste darauf liegen kann. Jede Lage liegt mittig im Bin.</li>
+      <li><b>Wand.</b> Eine Lage, deren Unterkante in der Höhe z liegt, darf so lang sein wie der Bin dort: Bodenlänge plus Steigung mal z. Die Höhe z ist die Summe der Lagen darunter. So entstehen Bedingungen wie <code>3*w&lt;=515+0.125*h</code>: Drei Kartons mit w nebeneinander passen, wenn die Lage auf einer Lage der Höhe h steht. Reicht eine Lage in den geraden Rand, kommt die Bedingung mit dem Maß der Öffnung dazu, etwa <code>3*w&lt;=558</code>.</li>
+      <li><b>Höhe.</b> Die Summe aller Lagenhöhen bleibt unter der Gesamthöhe, zum Beispiel <code>l+h&lt;=409</code>.</li>
+      <li><b>Auflage.</b> Jeder Karton einer oberen Lage liegt mindestens 1 mm auf einem Karton darunter. Daraus werden Bedingungen wie <code>0.5*w+1&lt;=l</code>. Der Faktor 0.5 kommt daher, dass die Lagen mittig liegen.</li>
+      <li><b>Gerundete Zahlen.</b> In der Textform stehen höchstens vier Nachkommastellen. Gerundet wird immer so, dass die Bedingung dadurch strenger wird, nie lockerer.</li>
+      <li><b>Entstehung.</b> Wie im Reiter „Quader-Bin“: Start mit einfachen Gittern am Boden, dann Abtasten entlang von Linien. An jeder Stelle, an der die Anzahl laut Liste sinkt, sucht der Rechner das beste Lagenmuster und nimmt es als Regel auf.</li>
+      <li><b>Verlässlichkeit.</b> Jede Regel ist durch ihr Muster belegt, sie zeigt also nie zu viel. Die Liste kennt nur Lagenmuster. „Karton prüfen“ findet mit verschränkten Lagen und der freien Suche gelegentlich einen Karton mehr. Ist das gefundene Muster ein Lagenmuster, lässt es sich per Klick als Regel übernehmen.</li>
+    </ul>
+  </section>
+
   <section class="panel notes" aria-labelledby="cn-title">
     <h2 id="cn-title">So wird der konische Bin gerechnet</h2>
     <ul>
@@ -250,8 +305,10 @@
     </ul>
     <h2>Textform der Muster</h2>
     <ul>
-      <li><code>K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)</code> nennt zuerst die Kartonmaße, dann jeden Karton mit Lage und Position. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter <code>@</code> stehen x, y und z der Ecke in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden.</li>
-      <li>Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße und meldet, wenn ein Karton durch die Wand stößt, einen anderen schneidet oder nirgends aufliegt.</li>
+      <li><code>K(295x131x86; Z(3x1x1:wlh,4x4x1:whl))</code> ist ein Lagenmuster. Zuerst steht ein Karton, für den das Muster passt, dann die Lagen von unten nach oben in <code>Z(…)</code>. <code>3x1x1:wlh</code> ist ein Block wie im Reiter „Quader-Bin“: 3 Kartons entlang der Länge, 1 entlang der Breite, 1 hoch; w liegt entlang der Länge, l entlang der Breite, h zeigt nach oben. Innerhalb einer Lage legen <code>X(…)</code> und <code>Y(…)</code> Blöcke nebeneinander. Besteht das Muster aus einer einzigen Lage, entfällt <code>Z(…)</code>.</li>
+      <li>Beim Laden eines Lagenmusters rechnet die Seite die Regel für den eingestellten Bin neu aus und zeigt das Muster mit deinem Karton, wenn er passt.</li>
+      <li><code>K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)</code> ist ein freies Muster ohne Regel. Es nennt zuerst die Kartonmaße, dann jeden Karton mit Lage und Position. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter <code>@</code> stehen x, y und z der Ecke in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden.</li>
+      <li>Beim Laden eines freien Musters prüft die Seite es gegen die eingestellten Bin-Maße und meldet, wenn ein Karton durch die Wand stößt, einen anderen schneidet oder nirgends aufliegt.</li>
     </ul>
   </section>
   </div>
@@ -260,9 +317,10 @@
 <textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
 
 <!-- Nach jeder Änderung an CSS oder JavaScript die Kennung v=… überall in dieser Datei erhöhen, sonst zeigen Browser alte Dateien aus dem Zwischenspeicher. -->
-<script src="packcore.js?v=2026-10-02.3"></script>
-<script src="cone.js?v=2026-10-02.3"></script>
-<script src="app.js?v=2026-10-02.3"></script>
-<script src="cone-app.js?v=2026-10-02.3"></script>
+<script src="packcore.js?v=2026-10-02.4"></script>
+<script src="cone.js?v=2026-10-02.4"></script>
+<script src="cone-rules.js?v=2026-10-02.4"></script>
+<script src="app.js?v=2026-10-02.4"></script>
+<script src="cone-app.js?v=2026-10-02.4"></script>
 </body>
 </html>

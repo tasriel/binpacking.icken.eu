@@ -8,9 +8,15 @@
  *      dem Löser verglichen (Blockmuster, optional zusätzlich Suche).
  *
  * Aufruf:  node tools/validate-rules.js rules/603x403x404.json [--samples 5000] [--search-ms 0] [--seed 1]
+ *
+ * Listen für den konischen Bin (rules/konisch-….json) erkennt das Werkzeug selbst. Dort
+ * prüft es jedes Muster vollständig (Wände, Überschneidung, Auflage) und vergleicht die
+ * Liste mit dem Lagenmuster-Löser und mit der schnellen Rechnung von „Karton prüfen“.
  */
 const fs = require("fs");
 const P = require("../packcore.js");
+const C = require("../cone.js");
+const R = require("../cone-rules.js");
 
 /**
  * @param {string[]} argv
@@ -53,9 +59,83 @@ function rng(seed) {
   return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
 }
 
+/**
+ * Prüft eine Liste für den konischen Bin.
+ * @param {import("../cone-rules.js").ConeRulesData} data @param {number} samples @param {number} seed
+ */
+function validateCone(data, samples, seed) {
+  const bin = data.cone, nmax = data.nmax;
+  const rand = rng(seed);
+  const rules = R.unpackConeRules(data).map((r) => {
+    const p = R.parseConeAny(r.pat);
+    if (p.kind !== "layers") throw new Error(`Kein Lagenmuster: ${r.pat}`);
+    return { ...r, root: p.root, ref: p.ref };
+  });
+
+  // 1. Belegt: am Bezugskarton, knapp innerhalb der Ecken und an Zufallspunkten des Bereichs nachbauen
+  let checks = 0, bad = 0, textMismatch = 0;
+  for (const r of rules) {
+    const derived = R.coneRule(r.root, bin, r.ref);
+    if (R.rowsText(derived.rows) !== R.rowsText(r.rows)) textMismatch++;
+    const V = P.polyVertices(/** @type {any[]} */ (r.rows).concat(R.coneDomainRows()));
+    /** @type {number[][]} */ const pts = r.ref ? [r.ref] : [];
+    // Ecken minimal nach innen ziehen: genau auf der Grenze entscheidet sonst die Rechengenauigkeit
+    const mid = [0, 1, 2].map((e) => V.reduce((acc, v) => acc + v[e], 0) / Math.max(1, V.length));
+    for (const v of V) pts.push(v.map((x, e) => x + (mid[e] - x) * 1e-4));
+    for (let k = 0; k < 6 && V.length; k++) {
+      const w = V.map(() => rand());
+      const sum = w.reduce((a, b) => a + b, 0);
+      pts.push([0, 1, 2].map((e) => V.reduce((acc, v, i) => acc + v[e] * w[i] / sum, 0)));
+    }
+    for (const q of pts) {
+      if (q[2] < 1) continue;
+      checks++;
+      const placed = R.coneLayout(r.root, q, bin);
+      const errs = C.coneCheck(bin, placed);
+      if (errs.length || placed.length !== r.count) {
+        bad++;
+        if (bad <= 5) console.log(`Fehler in „${R.coneRuleText(r.rows, r.score)}“ bei ${q.map((v) => v.toFixed(1)).join("x")}: ${errs[0] || "Anzahl stimmt nicht"}`);
+      }
+    }
+  }
+  console.log(`Belegt: ${rules.length} Regeln, ${checks} Nachbauten, ${bad} Fehler, ${textMismatch} Muster mit abweichender Regel`);
+
+  // 2. Vollständig: Zufallskartons gegen Lagenmuster-Löser und schnelle Rechnung
+  const [M0, M1, M2] = [bin.topL, bin.topW, C.coneHeight(bin)].sort((a, b) => b - a).map((v) => Math.floor(v + 1e-9));
+  let checked = 0, lower = 0, higher = 0, lowerQuick = 0, higherQuick = 0, wrong = 0;
+  /** @type {string[]} */ const examples = [];
+  const t0 = Date.now();
+  while (checked < samples) {
+    const c = [Math.floor(rand() * M0) + 1, Math.floor(rand() * M1) + 1, Math.floor(rand() * M2) + 1].sort((a, b) => b - a);
+    if (c[1] > M1 || c[2] > M2) continue;
+    const hit = R.lookupConeRules(rules, c);
+    if (hit.index >= 0) {
+      const placed = R.coneLayout(rules[hit.index].root, c, bin);
+      if (C.coneCheck(bin, placed).length || placed.length !== rules[hit.index].count) wrong++;
+    }
+    if (hit.score >= nmax) continue;
+    const lp = R.coneLayerPattern(c, bin, { enough: nmax });
+    const solver = lp ? Math.min(lp.count, nmax) : 0;
+    const quick = Math.min(C.analyzeCone(c, bin, 0).count, nmax);
+    checked++;
+    if (solver > hit.score) { lower++; if (examples.length < 10) examples.push(`${c.join("x")}: Liste ${hit.score}, Löser ${solver}`); }
+    if (solver < hit.score) higher++;
+    if (quick > hit.score) lowerQuick++;
+    if (quick < hit.score) higherQuick++;
+  }
+  const pct = (/** @type {number} */ n) => (100 * n / Math.max(1, checked)).toFixed(2) + " %";
+  console.log(`Vollständig: ${checked} Kartons unter ${nmax} geprüft in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${wrong} Muster ungültig`);
+  console.log(`  Liste unter Lagenmuster-Löser: ${lower} (${pct(lower)}), darüber: ${higher} (${pct(higher)})`);
+  console.log(`  Liste unter schneller Rechnung von „Karton prüfen“: ${lowerQuick} (${pct(lowerQuick)}), darüber: ${higherQuick} (${pct(higherQuick)})`);
+  if (examples.length) console.log("  Beispiele: " + examples.join("; "));
+  process.exitCode = bad || wrong ? 1 : 0;
+}
+
 function main() {
   const { file, samples, searchMs, seed } = parseArgs(process.argv.slice(2));
-  /** @type {import("../packcore.js").RulesData} */ const data = JSON.parse(fs.readFileSync(file, "utf8"));
+  /** @type {any} */ const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (raw.cone) { validateCone(raw, samples, seed); return; }
+  /** @type {import("../packcore.js").RulesData} */ const data = raw;
   const bin = data.bin, nmax = data.nmax;
   const rules = P.unpackRules(data);
   const rand = rng(seed);

@@ -1505,6 +1505,6 @@ if (typeof module !== "undefined") {
     consHold, ruleText, consText, termText, patternString, parsePattern, dpSolve, dpTable, normalSet, upperBoundInt, searchPack,
     portfolioSearch, dagFromPlacements, analyzeCarton, generateRules, layeredSearch, patternHasDag, QUALITY_PRESETS,
     genOptions, binKeyOf, packRulesData, unpackRules, rulesToText, numText, dot, vol, regionVertices, lookupRules,
-    exampleCarton, verticesInside, reduceTree, bestGrid
+    exampleCarton, verticesInside, reduceTree, bestGrid, addTerms, polyVertices, lpMax, domainRows, simplifyTree, treeCount
   };
 }

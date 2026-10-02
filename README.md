@@ -6,7 +6,7 @@ Die Webseite in diesem Repository
 
 - prüft einen einzelnen Karton und zeigt das beste gefundene Packmuster als 3D-Skizze mit Packreihenfolge und Positionen in mm,
 - lädt gespeicherte Packmuster aus ihrer Textform,
-- erzeugt für einen beliebigen Bin eine Regelliste im Format `when … then N`, jede Regel mit einem Packmuster als Beleg.
+- erzeugt für einen beliebigen Bin eine Regelliste im Format `when … then N`, jede Regel mit einem Packmuster als Beleg. Das geht für Quader-Bins und für konische Bins.
 
 Kartons dürfen beliebig gedreht werden, auch jeder Karton anders. Alle Maße sind Innenmaße in mm.
 
@@ -15,9 +15,9 @@ Kartons dürfen beliebig gedreht werden, auch jeder Karton anders. Alle Maße si
 Die Seite hat zwei Reiter:
 
 - **Quader-Bin:** gerade Wände. Karton prüfen, Muster laden, Regelliste.
-- **Konischer Bin:** unten schmaler als oben, mit geradem Rand an der Öffnung. Karton prüfen und Muster laden. Siehe [Konischer Bin](#konischer-bin).
+- **Konischer Bin:** unten schmaler als oben, mit geradem Rand an der Öffnung. Karton prüfen, Muster laden, Regelliste. Siehe [Konischer Bin](#konischer-bin) und [Regeln für den konischen Bin](#regeln-für-den-konischen-bin).
 
-Für die Bins **603 × 403 × 404** und **603 × 403 × 312** liegen fertige Regellisten in [`rules/`](rules/).
+Für die Quader-Bins **603 × 403 × 404** und **603 × 403 × 312** und für den konischen Bin mit den Maßen aus der Zeichnung (Öffnung 558 × 374, Rand 65, Boden 515 × 336, konischer Teil 344) liegen fertige Regellisten in [`rules/`](rules/).
 
 ## Schnellstart
 
@@ -29,7 +29,7 @@ python3 -m http.server 8000
 
 Dann <http://localhost:8000> öffnen. Direkt als Datei (`file://`) funktionieren die Hintergrundrechnung und das Laden der Regellisten nicht.
 
-Nach Änderungen an CSS oder JavaScript die Kennung `v=…` in `index.html` erhöhen (Stylesheet und die vier Script-Tags). Sie hängt auch am Worker und seinen Dateien. Ohne neue Kennung zeigen Browser oft noch die alten Dateien aus dem Zwischenspeicher; dann hilft neu laden mit Strg+Umschalt+R.
+Nach Änderungen an CSS oder JavaScript die Kennung `v=…` in `index.html` erhöhen (Stylesheet und die fünf Script-Tags). Sie hängt auch am Worker und seinen Dateien. Ohne neue Kennung zeigen Browser oft noch die alten Dateien aus dem Zwischenspeicher; dann hilft neu laden mit Strg+Umschalt+R.
 
 Die beiden Werkzeuge in `tools/` brauchen nur Node.js 18 oder neuer, kein `npm install`.
 
@@ -130,13 +130,59 @@ Im Vergleich mit einem exakten Löser (CP-SAT) an 24 Kartons mit 4 bis 12 Stück
 K(360x236x128; whl@43,59,0; whl@279,59,0; whl@43,187,0; whl@279,187,0)
 ```
 
-Zuerst die Kartonmaße, dann jeder Karton mit Lage und Ecke. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter `@` stehen x, y, z in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden. Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße.
+Das ist ein freies Muster: zuerst die Kartonmaße, dann jeder Karton mit Lage und Ecke. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter `@` stehen x, y, z in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden. Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße. Lagenmuster haben eine eigene, kürzere Textform, siehe nächster Abschnitt.
 
-Regeln im Format `when … then N` gibt es für den konischen Bin nicht. Dort hängt die Wandposition von der Höhe jedes Kartons ab, die Bedingungen wären keine einfachen Summen mehr.
+## Regeln für den konischen Bin
+
+```
+when l<=336 and 4*h<=336+0.1104*h and 4*w<=515+0.125*h and l+h<=409 and 1<=0.5*w and h+1<=0.5*l then 19 | K(295x131x86; Z(3x1x1:wlh,4x4x1:whl))
+```
+
+Gelesen werden die Regeln wie beim Quader-Bin: l ≥ w ≥ h, es gilt die höchste Anzahl aller erfüllten Regeln, die höchste Anzahl der Liste heißt „so viele oder mehr“. Die Regeln gelten für Kartons ab 1 mm Kantenlänge und **nur für die Bin-Maße, mit denen sie berechnet wurden**. Die Seite rechnet immer mit den Maßen, die im Reiter eingestellt sind, und speichert die Liste unter genau diesen Maßen.
+
+**Lagenmuster**
+
+Jede Regel gehört zu einem Muster aus Lagen:
+
+- Außen steht `Z(Lage, Lage, …)`, von unten nach oben. Bei einer einzigen Lage entfällt `Z(…)`.
+- Eine Lage besteht aus Blöcken wie `3x1x2:wlh` (3 entlang der Länge, 1 entlang der Breite, 2 hoch, Drehung wie beim Quader-Bin), mit `X(…)` und `Y(…)` nebeneinander gelegt.
+- Alle Lagen außer der obersten sind oben eben (alle Blöcke gleich hoch). Nur die oberste darf Blöcke unterschiedlicher Höhe enthalten.
+- Jede Lage liegt mittig im Bin.
+
+Die Textform ist `K(Karton; Blockbaum)`. Der Karton vorn ist ein Bezugskarton, für den das Muster passt. An ihm wird festgelegt, welcher Karton auf welchem aufliegt. Ohne Bezugskarton (`K(Z(…))`) sucht die Seite beim Laden selbst einen passenden.
+
+**Bedingungen**
+
+| Art | Beispiel | Bedeutung |
+|---|---|---|
+| Wand | `4*w<=515+0.125*h` | Eine Lage mit Unterkante in der Höhe z darf höchstens so lang sein wie der Bin dort: Bodenlänge + Steigung · z. Hier steht die Lage auf einer Lage der Höhe h, also z = h. Die Steigung ist (Länge oben − Länge unten) / Höhe des konischen Teils, hier 43 / 344 = 0,125; für die Breite 38 / 344 ≈ 0,1105. |
+| Wand im geraden Rand | `3*w<=558` | Reicht eine Lage in den geraden Rand, darf sie höchstens so lang sein wie die Öffnung. Beide Wand-Bedingungen zusammen beschreiben den Knick ohne Fallunterscheidung. |
+| Höhe | `l+h<=409` | Die Summe der Lagenhöhen bleibt unter der Gesamthöhe. |
+| Auflage | `h+1<=0.5*l` | Jeder Karton einer oberen Lage liegt mindestens 1 mm (`CONE_SUPPORT`) auf einem bestimmten Karton darunter. Der Faktor 0.5 kommt daher, dass die Lagen mittig liegen. |
+
+In der Textform stehen höchstens vier Nachkommastellen. Gerundet wird so, dass eine Bedingung höchstens strenger wird.
+
+**Entstehung**
+
+Wie beim Quader-Bin: Start mit einfachen Gittern am Boden, dann Abtasten entlang von Linien, zum Schluss Aufräumen. An jedem Prüfpunkt sucht eine dynamische Programmierung das beste Lagenmuster: für jede mögliche Höhe (Summe von Kartonkanten) die beste ebene Lage im Querschnitt dort und die beste oberste Lage aus unterschiedlich hohen Stapeln. Zwei Lagen werden nur kombiniert, wenn jeder Karton der oberen aufliegt. Überflüssige Bedingungen fallen weg; übrig bleiben die, die eine Seitenfläche des Regelbereichs bilden.
+
+Weil die Auflage dazukommt, sind die Bereiche kleiner als beim Quader-Bin. Für den Bin aus der Zeichnung entstehen deshalb 4.661 Regeln, etwa dreimal so viele wie für einen Quader-Bin.
+
+**Verlässlichkeit**
+
+Stichproben mit `tools/validate-rules.js` für die mitgelieferte Liste (Genauigkeit „Gründlich“):
+
+| Prüfung | Ergebnis |
+|---|---|
+| Muster nachgebaut (Wände, Überschneidung, Auflage) | 87.003 Nachbauten, 0 Fehler |
+| Liste unter dem Lagenmuster-Löser | 9 von 10.000 Kartons, jeweils um 1 bis 2 |
+| Liste unter der schnellen Rechnung von „Karton prüfen“ | 118 von 10.000 Kartons; bei 68 von 10.000 liegt die Liste darüber |
+
+Die Liste kennt nur Lagenmuster. „Karton prüfen“ packt Lagen auch gemischt hoch und verschränkt und sucht mit „Genau rechnen“ frei im Konus; damit findet es gelegentlich einen Karton mehr. Zeigt „Karton prüfen“ mehr als die Liste und ist das Muster ein Lagenmuster, lässt es sich per Klick als Regel übernehmen.
 
 ## Regeln erzeugen und prüfen
 
-Auf der Seite: Bin-Maße eintragen, Genauigkeit wählen, „Regeln berechnen“. Das läuft im Hintergrund und wird nur im Browser gespeichert. „Als Textdatei speichern“ lädt jede Liste als Text herunter.
+Auf der Seite: Bin-Maße eintragen, Genauigkeit wählen, „Regeln berechnen“. Das läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text herunter. Das gilt für beide Reiter.
 
 Damit eine Liste für alle Besucher sofort da ist, wird sie ins Repository gelegt:
 
@@ -149,6 +195,10 @@ node tools/generate-rules.js 603 403 404 --quality full --txt regeln_603x403x404
 
 # Regelliste prüfen: Muster nachbauen und Stichprobe gegen den Löser
 node tools/validate-rules.js rules/603x403x404.json --samples 5000 --search-ms 100
+
+# Konischer Bin: Öffnung Länge, Breite, Randhöhe, dann Boden Länge, Breite, Höhe des konischen Teils
+node tools/generate-rules.js --cone 558 374 65 515 336 344 --quality full
+node tools/validate-rules.js rules/konisch-558x374x65-515x336x344.json --samples 5000
 ```
 
 | Genauigkeit | Ablauf | Dauer (Node, ein Kern) |
@@ -156,6 +206,14 @@ node tools/validate-rules.js rules/603x403x404.json --samples 5000 --search-ms 1
 | `fast` | Raster 40 mm mit Suche, Raster 20 mm | etwa 1 Minute |
 | `std` | wie `fast`, dann Zufallslinien bis 4.000 Linien ohne neue Regel | etwa 3 Minuten |
 | `full` | Raster 40 und 20 mm mit Suche, Raster 10 mm, dann Zufallslinien bis 15.000 Linien ohne neue Regel | etwa 6 bis 8 Minuten |
+
+Für den konischen Bin (ohne Suche nach verschränkten Lagen):
+
+| Genauigkeit | Ablauf | Dauer (Node, ein Kern) | Regeln, Bin aus der Zeichnung |
+|---|---|---|---|
+| `fast` | Raster 40 und 20 mm | etwa 45 Sekunden | 2.319 |
+| `std` | wie `fast`, dann Zufallslinien bis 1.000 Linien ohne neue Regel | etwa 3 Minuten | 4.423 |
+| `full` | Raster 40, 20 und 10 mm, dann Zufallslinien bis 15.000 Linien ohne neue Regel | etwa 4 Minuten | 4.661 |
 
 Die Seite lädt eine Liste aus `rules/` automatisch, sobald die passenden Bin-Maße eingestellt sind. Danach committen und pushen, fertig.
 
@@ -166,9 +224,10 @@ index.html            Seite
 style.css             Gestaltung, helles und dunkles Farbschema
 app.js                Bedienung: Reiter, Quader-Bin, Zeichnung
 cone-app.js           Bedienung: Reiter „Konischer Bin“
-worker.js             Hintergrundrechnung (lädt packcore.js und cone.js)
+worker.js             Hintergrundrechnung (lädt packcore.js, cone.js und cone-rules.js)
 packcore.js           Rechenkern Quader: Löser, Muster, Regeln, Textform, Regelerzeugung (Browser und Node)
 cone.js               Rechenkern konischer Bin: Geometrie, Lagen, Absenken, freie Suche, Textform (Browser und Node)
+cone-rules.js         Regeln konischer Bin: Lagenmuster, Bedingungen, Textform, Regelerzeugung (Browser und Node)
 rules/                vorberechnete Regellisten, index.json listet die vorhandenen Bins
 tools/
   generate-rules.js   Regelliste erzeugen (Node)
@@ -187,6 +246,8 @@ Format der Dateien in `rules/`:
 ```
 
 Jede Regel ist `[Anzahl (gedeckelt auf nmax), Kartons im Muster, Bedingungen, Muster, Quelle]`. Die Bedingungen stehen flach in Vierergruppen `[a, b, c, Achse]` für `a*l + b*w + c*h <= Bin-Maß der Achse` (Achse 0 = Länge, 1 = Breite, 2 = Höhe). Die Quelle ist `grid`, `dp`, `search` oder `manual`.
+
+Listen für den konischen Bin heißen `konisch-<obenL>x<obenB>x<Rand>-<untenL>x<untenB>x<konischH>.json`. Statt `bin` steht dort `cone` mit den sechs Maßen (`topL`, `topW`, `rimH`, `botL`, `botW`, `coneH`). Die Bedingungen stehen flach in Achtergruppen `[p0, p1, p2, n0, n1, n2, b, Art]` für `(p0-n0)*l + (p1-n1)*w + (p2-n2)*h <= b`. `p` ist der Anteil, der in der Textform links steht, `n` der rechts; Art 0 = Wand, 1 = Höhe, 2 = Auflage.
 
 ## Veröffentlichen
 

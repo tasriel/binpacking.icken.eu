@@ -2,11 +2,12 @@
 /*
  * Rechnet im Hintergrund, damit die Seite bedienbar bleibt.
  * Nachrichten: {type: "check"} prüft einen Karton im Quader-Bin, {type: "gen"} erzeugt
- * eine Regelliste, {type: "cone"} prüft einen Karton im konischen Bin.
+ * dessen Regelliste, {type: "cone"} prüft einen Karton im konischen Bin, {type: "conegen"}
+ * erzeugt dessen Regelliste.
  */
 // dieselbe Versionskennung wie die Seite (worker.js?v=…), damit nichts Altes aus dem Zwischenspeicher kommt
 const V = self.location.search;
-importScripts("packcore.js" + V, "cone.js" + V);
+importScripts("packcore.js" + V, "cone.js" + V, "cone-rules.js" + V);
 
 self.onmessage = (e) => {
   const m = e.data;
@@ -19,7 +20,10 @@ self.onmessage = (e) => {
   } else if (m.type === "cone") {
     /** @param {ConeAnalysis} a */
     const send = (a) => self.postMessage({ type: "cone", id: m.id, result: a });
-    send(analyzeCone(m.carton, m.bin, m.budget, send));
+    send(analyzeConeLayers(m.carton, m.bin, m.budget, send));
+  } else if (m.type === "conegen") {
+    const res = generateConeRules(m.bin, m.opt, (p) => self.postMessage({ type: "progress", id: m.id, p }));
+    self.postMessage({ type: "conegen", id: m.id, data: packConeRules(res, m.quality) });
   } else if (m.type === "gen") {
     const res = generateRules(m.bin, m.opt, (p) => self.postMessage({ type: "progress", id: m.id, p }));
     self.postMessage({ type: "gen", id: m.id, data: packRulesData(res, m.quality) });
