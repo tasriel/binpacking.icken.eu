@@ -222,6 +222,7 @@ Die Seite lädt eine Liste aus `rules/` automatisch, sobald die passenden Bin-Ma
 ```
 index.html            Seite
 style.css             Gestaltung, helles und dunkles Farbschema
+favicon.svg           Icon der Seite; favicon.ico und apple-touch-icon.png sind daraus erzeugt
 app.js                Bedienung: Reiter, Quader-Bin, Zeichnung
 cone-app.js           Bedienung: Reiter „Konischer Bin“
 worker.js             Hintergrundrechnung (lädt packcore.js, cone.js und cone-rules.js)
