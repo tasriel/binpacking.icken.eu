@@ -547,7 +547,7 @@ let coneGenId = 0;
 /** @returns {{nmax: number, quality: "fast"|"std"|"full", res: number} | null} Einstellungen der Regelerzeugung */
 function coneGenSettings() {
   const nmax = Math.round(+(/** @type {HTMLInputElement} */ ($("#cg-nmax"))).value);
-  if (!(nmax >= 2 && nmax <= 200)) return null;
+  if (!(nmax >= 2 && nmax <= NMAX_LIMIT)) return null;
   return { nmax, quality: /** @type {"fast"|"std"|"full"} */ ((/** @type {HTMLSelectElement} */ ($("#cg-quality"))).value), res: +(/** @type {HTMLSelectElement} */ ($("#cg-res"))).value || 1 };
 }
 const coneGenEst = { w: /** @type {Worker | null} */ (null), t: 0, ms: 0 };
@@ -565,7 +565,7 @@ function stopConeGen() {
 $("#cg-stop").addEventListener("click", () => { stopConeGen(); $("#cg-source").textContent = "Berechnung abgebrochen."; if (coneState.rules.length) loadConeRules(); });
 $("#cg-start").addEventListener("click", () => {
   const g = coneGenSettings();
-  if (!g) { $("#cg-source").textContent = "Die Höchstanzahl muss zwischen 2 und 200 liegen."; return; }
+  if (!g) { $("#cg-source").textContent = `Die Höchstanzahl muss zwischen 2 und ${NMAX_LIMIT} liegen.`; return; }
   const b = readConeBin();
   if (!b) return;
   coneState.bin = b;
@@ -632,9 +632,12 @@ function renderConeRuleList() {
   /** @type {Map<number, number>} */ const per = new Map();
   coneState.rules.forEach((r) => per.set(r.score, (per.get(r.score) || 0) + 1));
   const rows = [];
-  let cur = -1;
+  let cur = -1, shown = 0, total = 0;
   for (const r of coneState.rules) {
     if (coneState.filter !== "all" && String(r.score) !== coneState.filter) continue;
+    total++;
+    if (shown >= RULE_ROWS_MAX) continue;
+    shown++;
     if (r.score !== cur) {
       cur = r.score;
       const c = per.get(cur) || 0;
@@ -642,7 +645,7 @@ function renderConeRuleList() {
     }
     rows.push(`<tr class="${hit === r ? "hit" : ""}"><td class="rule">${esc(coneRuleText(r.rows, r.score, U()))}</td><td class="ex">${r.example ? dimsText(r.example) : "–"}</td><td class="pat"><span title="${esc(r.pat)}">${esc(r.pat)}</span></td><td><button type="button" class="btn small" data-show-rule="${r.id}">Zeigen</button></td></tr>`);
   }
-  $("#cr-list").innerHTML = rows.join("");
+  $("#cr-list").innerHTML = rows.join("") + moreRowsHtml(shown, total);
 }
 $("#cr-list").addEventListener("click", (e) => {
   const b = /** @type {HTMLElement} */ (e.target).closest("[data-show-rule]");

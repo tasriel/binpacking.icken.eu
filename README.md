@@ -213,15 +213,30 @@ Die Liste kennt nur Lagenmuster. „Karton prüfen“ packt Lagen auch gemischt 
 
 ## Regeln erzeugen und prüfen
 
-Auf der Seite: Bin-Maße eintragen, Höchstanzahl (2 bis 200), Raster und Genauigkeit wählen, „Regeln berechnen“. Unter den Feldern steht die erwartete Dauer. Die Rechnung läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text herunter. Das gilt für beide Reiter.
+Auf der Seite: Bin-Maße eintragen, Höchstanzahl (2 bis 1000), Raster und Genauigkeit wählen, „Regeln berechnen“. Unter den Feldern steht die erwartete Dauer. Die Rechnung läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text herunter. Das gilt für beide Reiter.
 
 **Raster.** Mit „1 mm“ deckt die Liste alle Kartons in ganzen Millimetern ab, mit „1 cm“ alle in ganzen Zentimetern. Die Regeln selbst gelten in beiden Fällen für jeden Karton, das Raster bestimmt nur, wo der Rechner nach Mustern sucht. Für einen Karton mit krummen Maßen liefert eine cm-Liste im Quader-Bin mindestens die Anzahl des auf ganze cm aufgerundeten Kartons. Vorgewählt ist 1 mm bis 2 m größtes Bin-Maß, darüber 1 cm. Bei großen Bins ist das cm-Raster viel schneller: Im mm-Raster liegen die Prüfpunkte auf krummen Maßen, dort ist jede einzelne Rechnung teuer, und die Schlussprüfung hat hundertmal so viele Linien.
 
 **Zeitschätzung.** Vor dem Start misst die Seite die Löser-Rechnung an Stichproben für genau diesen Bin und rechnet mit der üblichen Zahl der Aufrufe hoch (`estimateRulesMs`, `estimateConeRulesMs`). Die Schätzung ist grob und kann um den Faktor 2 abweichen. Das Zeitlimit eines Laufs ist das der Genauigkeitsstufe, bei großen Bins das Vierfache der Schätzung. Wird es erreicht, steht das bei der Liste.
 
-Für den Bin 12100 × 2400 × 2700 mm im cm-Raster mit Höchstanzahl 30 dauerte „Standard“ in Node knapp 11 Minuten (892 Regeln, Schätzung 9 Minuten), „Gründlich“ knapp 21 Minuten (918 Regeln, Schätzung 15 Minuten).
+Für den Bin 12100 × 2400 × 2700 mm im cm-Raster mit Höchstanzahl 30 dauerte „Schnell“ in Node knapp 2 Minuten (753 Regeln, Schätzung 104 Sekunden), „Gründlich“ knapp 21 Minuten (918 Regeln, Schätzung 15 Minuten). Mit Höchstanzahl 100 waren es bei „Schnell“ gut 10 Minuten (Schätzung 11 Minuten).
 
-**Höchstanzahl und große Bins.** Die Liste unterscheidet Anzahlen nur bis zur Höchstanzahl. In einem Bin mit 78 m³ sagt sie bei Höchstanzahl 30 für alle Kartons unter etwa 2,6 m³ nur „30 oder mehr“. Für kleinere Kartons die Höchstanzahl erhöhen; der Aufwand wächst damit deutlich.
+**Höchstanzahl und große Bins.** Die Liste unterscheidet Anzahlen nur bis zur Höchstanzahl. In einem Bin mit 78 m³ sagt sie bei Höchstanzahl 30 für alle Kartons unter etwa 2,6 m³ nur „30 oder mehr“. Für kleinere Kartons die Höchstanzahl erhöhen, bis 1000 (`NMAX_LIMIT` in `app.js`).
+
+Der Aufwand wächst damit aus zwei Gründen: Es gibt mehr Regeln zu finden, und geprüft werden kleinere Kartons, bei denen jede einzelne Rechnung länger dauert. Gemessen in Node:
+
+| Bin, Raster, Genauigkeit | Höchstanzahl 30 | 100 | 300 | 1000 |
+|---|---|---|---|---|
+| 603 × 403 × 404, 1 cm, Schnell | 12 s, 394 Regeln | 45 s, 1.173 | 80 s, 1.710 | 103 s, 1.977 |
+| konischer Bin aus der Zeichnung, 1 cm, Schnell | 5 s, 815 Regeln | 22 s, 1.753 | 48 s, 2.260 | 90 s, 2.498 |
+| 603 × 403 × 404, 1 mm, Schnell | 59 s, 1.193 Regeln | 12,5 min, 5.686 | nicht gemessen | nicht gemessen |
+| 12100 × 2400 × 2700, 1 cm, Schnell | 110 s, 753 Regeln | 10 min, 3.976 | nicht gemessen | nicht gemessen |
+
+Auf einem groben Raster flacht der Aufwand ab, weil es dort nur wenige verschiedene Kartons gibt. Auf einem feinen Raster kann eine hohe Höchstanzahl Stunden dauern; die Seite zeigt die Schätzung vor dem Start. Die Genauigkeit begrenzt auch den Aufwand je einzelner Rechnung (`dpWork` in `QUALITY_PRESETS`: Schnell ein Zehntel von Gründlich). Reicht er nicht, rechnet der Löser dort vereinfacht; die Regel bleibt gültig, kann aber einen Karton unter dem Möglichen liegen.
+
+Bei hoher Höchstanzahl lohnt „Standard“ statt „Schnell“: Im Bin 603 × 403 × 404 mit cm-Raster und Höchstanzahl 300 lag die schnelle Liste bei 9,5 % der Kartons unter dem Blockmuster-Löser, die Standard-Liste (136 s, 2.538 Regeln) bei 1,1 %. Beide Listen sind belegt, sie zeigen also nie zu viel.
+
+Große Listen: Die Tabelle zeigt höchstens 1500 Regeln auf einmal (`RULE_ROWS_MAX`), der Filter „Anzahl“ grenzt ein. Passt eine Liste nicht in den Speicher des Browsers (etwa 5 MB), meldet die Seite das; „Als Textdatei speichern“ funktioniert trotzdem.
 
 **Schrittweite der Rasterlinien.** Die Angaben 40, 20 und 10 in der Tabelle unten gelten für einen Bin von etwa 600 × 400 × 400 mm. Für andere Größen rechnet `gridSteps` sie je Kante um, damit die Zahl der Linien ähnlich bleibt.
 

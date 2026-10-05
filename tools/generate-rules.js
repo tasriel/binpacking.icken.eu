@@ -46,7 +46,7 @@ function parseArgs(argv) {
   const quality = /** @type {"fast" | "std" | "full"} */ (flags.quality || "full");
   if (!(quality in P.QUALITY_PRESETS)) { console.error(`Unbekannte Genauigkeit „${quality}“.`); process.exit(1); }
   const nmax = Number(flags.nmax || 30);
-  if (!(nmax >= 2 && nmax <= 200)) { console.error("--nmax muss zwischen 2 und 200 liegen."); process.exit(1); }
+  if (!(nmax >= 2 && nmax <= 1000)) { console.error("--nmax muss zwischen 2 und 1000 liegen."); process.exit(1); }
   const res = flags.res ? Number(flags.res) : (Math.max(...bin) > 2000 ? 10 : 1);
   if (res !== 1 && res !== 10) { console.error("--res muss 1 (mm) oder 10 (cm) sein."); process.exit(1); }
   return { bin, cone, quality, nmax, res, out: flags.out || path.join(__dirname, "..", "rules"), txt: flags.txt || null };

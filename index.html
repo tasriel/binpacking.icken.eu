@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=2026-10-05.2">
+<link rel="stylesheet" href="style.css?v=2026-10-05.3">
 </head>
 <body>
 <div class="wrap">
@@ -105,7 +105,7 @@
     <h2 id="r-title">Regeln für diesen Bin</h2>
     <p>Jede Regel beschreibt, wann ein bestimmtes Packmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Liste deckt alle Kartons auf dem gewählten Raster ab: in ganzen Millimetern oder in ganzen Zentimetern. Das Zentimeter-Raster rechnet bei großen Bins deutlich schneller; für Kartons mit krummen Maßen gilt dann die Regel des nächstgrößeren Kartons in ganzen Zentimetern.</p>
     <div class="gen-row">
-      <div class="field"><label for="g-nmax">Höchstanzahl</label><input id="g-nmax" type="number" min="2" max="200" step="1" value="30"></div>
+      <div class="field"><label for="g-nmax">Höchstanzahl</label><input id="g-nmax" type="number" min="2" max="1000" step="1" value="30"></div>
       <div class="field"><label for="g-res">Raster der Kartonmaße</label>
         <select id="g-res">
           <option value="1">1 mm</option>
@@ -158,7 +158,7 @@
       <li><b>Abtasten entlang von Linien.</b> Der Rechner hält zwei Kanten fest und lässt die dritte laufen. Überall, wo laut Regelliste die Anzahl sinkt, prüft er mit dem Löser, ob dort nicht doch mehr passen. Findet er ein besseres Muster, schiebt er den Karton so weit hinaus, wie das Muster noch trägt, und nimmt es als neue Regel auf. Erst auf festen Rastern, dann auf zufälligen Linien, bis lange nichts Neues mehr kommt.</li>
       <li><b>Drei Arten von Mustern.</b> Blockmuster teilen den Bin in Blöcke aus gleich gedrehten Kartons. Lagenmuster wiederholen eine zweidimensional verschränkte Lage, etwa eine Windmühle. Freie Muster sind beliebig verschränkt und werden mit einer Suche gefunden.</li>
       <li><b>Aufräumen.</b> Regeln, deren Bereich ganz in einer anderen Regel mit mindestens gleicher Anzahl liegt, fallen weg. Übrig bleiben nur Regeln, die für mindestens einen Karton in ganzen Millimetern den Ausschlag geben.</li>
-      <li><b>Raster und große Bins.</b> Das Raster legt fest, für welche Kartons die Liste vollständig sein soll: alle in ganzen Millimetern oder alle in ganzen Zentimetern. Die Regeln selbst gelten für jeden Karton. Bei Bins über 2 m ist das Zentimeter-Raster vorgewählt, weil das Millimeter-Raster dort sehr lange rechnet. Die Höchstanzahl begrenzt, bis zu welcher Anzahl die Liste unterscheidet; in einem großen Bin sagt sie für kleine Kartons nur „30 oder mehr“. Vor dem Start steht unter den Feldern, wie lange die Rechnung voraussichtlich dauert.</li>
+      <li><b>Raster und große Bins.</b> Das Raster legt fest, für welche Kartons die Liste vollständig sein soll: alle in ganzen Millimetern oder alle in ganzen Zentimetern. Die Regeln selbst gelten für jeden Karton. Bei Bins über 2 m ist das Zentimeter-Raster vorgewählt, weil das Millimeter-Raster dort sehr lange rechnet. Die Höchstanzahl (bis 1000) begrenzt, bis zu welcher Anzahl die Liste unterscheidet; in einem großen Bin sagt sie für kleine Kartons nur „30 oder mehr“. Eine höhere Höchstanzahl rechnet deutlich länger, auf einem feinen Raster auch Stunden. Vor dem Start steht unter den Feldern, wie lange die Rechnung voraussichtlich dauert.</li>
       <li><b>Verlässlichkeit.</b> Jede Regel ist durch ihr Muster belegt, eine Regel zeigt also nie zu viel. Die Liste kann an einzelnen Stellen zu wenig zeigen, wenn es ein Muster gibt, das der Rechner nicht gefunden hat. „Karton prüfen“ sucht für einen einzelnen Karton gründlicher und kann das Muster dann als Regel übernehmen.</li>
     </ul>
     <h2>Textform der Muster</h2>
@@ -270,7 +270,7 @@
     <h2 id="cr-title">Regeln für diesen Bin</h2>
     <p>Jede Regel beschreibt, wann ein bestimmtes Lagenmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Regeln gelten nur für die oben eingestellten Bin-Maße. Änderst du ein Maß, braucht der Bin eine neue Liste.</p>
     <div class="gen-row">
-      <div class="field"><label for="cg-nmax">Höchstanzahl</label><input id="cg-nmax" type="number" min="2" max="200" step="1" value="30"></div>
+      <div class="field"><label for="cg-nmax">Höchstanzahl</label><input id="cg-nmax" type="number" min="2" max="1000" step="1" value="30"></div>
       <div class="field"><label for="cg-res">Raster der Kartonmaße</label>
         <select id="cg-res">
           <option value="1">1 mm</option>
@@ -365,10 +365,10 @@
 <textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
 
 <!-- Nach jeder Änderung an CSS oder JavaScript die Kennung v=… überall in dieser Datei erhöhen, sonst zeigen Browser alte Dateien aus dem Zwischenspeicher. -->
-<script src="packcore.js?v=2026-10-05.2"></script>
-<script src="cone.js?v=2026-10-05.2"></script>
-<script src="cone-rules.js?v=2026-10-05.2"></script>
-<script src="app.js?v=2026-10-05.2"></script>
-<script src="cone-app.js?v=2026-10-05.2"></script>
+<script src="packcore.js?v=2026-10-05.3"></script>
+<script src="cone.js?v=2026-10-05.3"></script>
+<script src="cone-rules.js?v=2026-10-05.3"></script>
+<script src="app.js?v=2026-10-05.3"></script>
+<script src="cone-app.js?v=2026-10-05.3"></script>
 </body>
 </html>

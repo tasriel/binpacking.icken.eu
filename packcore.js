@@ -1331,10 +1331,9 @@ function generateRules(binInMM, opt, onProgress) {
   {
     /** @type {{u: number[], score: number, n: number[], p: number[], count: number}[]} */ const seeds = [];
     for (const p of PERMS) {
-      for (let a = 1; a <= nmax; a++) for (let b = 1; b <= nmax; b++) for (let c = 1; c <= nmax; c++) {
+      // nur Gitter bis zur Höchstanzahl und die kleinsten darüber; die Schleifen brechen ab, sobald ein Gitter größer wäre
+      for (let a = 1; a - 1 < nmax; a++) for (let b = 1; (a - 1) * b < nmax && a * (b - 1) < nmax; b++) for (let c = 1; (a - 1) * b * c < nmax && a * (b - 1) * c < nmax && a * b * (c - 1) < nmax; c++) {
         const prod = a * b * c;
-        const minimal = (a - 1) * b * c < nmax && a * (b - 1) * c < nmax && a * b * (c - 1) < nmax;
-        if (prod > nmax && !minimal) continue;
         const n = [a, b, c];
         const u = [Infinity, Infinity, Infinity];
         for (let ax = 0; ax < 3; ax++) u[p[ax]] = binMM[ax] / n[ax];
@@ -1452,7 +1451,7 @@ function generateRules(binInMM, opt, onProgress) {
     stats.lines++;
     let cnt = lineCounts(k, fixed, v0, v1);
     let v = v0;
-    for (let guard = 0; v <= v1 && guard < 400; guard++) {
+    for (let guard = 0; v <= v1 && guard < 400 + 2 * nmax; guard++) {
       const c = cnt[v - v0];
       if (c < nmax) {
         const q = [...fixed];
@@ -1619,14 +1618,16 @@ function lookupRules(rules, c) {
 
 /**
  * @typedef {"fast" | "std" | "full"} QualityKey
- * @typedef {{label: string, passes: GenPass[], searchMs: number, maxMs: number}} QualityPreset
+ * @typedef {{label: string, passes: GenPass[], searchMs: number, maxMs: number, dpWork: number}} QualityPreset
+ *   dpWork: Aufwand je Blockmuster-Rechnung. Reicht er nicht, rechnet der Löser vereinfacht; das
+ *   betrifft vor allem hohe Höchstanzahlen, bei denen kleine Kartons geprüft werden.
  */
 
 /** @type {Record<QualityKey, QualityPreset>} */
 const QUALITY_PRESETS = {
-  fast: { label: "Schnell", passes: [{ step: 40, search: true }, { step: 20 }], searchMs: 15, maxMs: 90000 },
-  std: { label: "Standard", passes: [{ step: 40, search: true }, { step: 20 }, { random: true, search: 0.2, patience: 4000 }], searchMs: 20, maxMs: 240000 },
-  full: { label: "Gründlich", passes: [{ step: 40, search: true }, { step: 20, search: true }, { step: 10 }, { random: true, search: 0.3, patience: 15000 }], searchMs: 40, maxMs: 2400000 }
+  fast: { label: "Schnell", passes: [{ step: 40, search: true }, { step: 20 }], searchMs: 15, maxMs: 90000, dpWork: 4e6 },
+  std: { label: "Standard", passes: [{ step: 40, search: true }, { step: 20 }, { random: true, search: 0.2, patience: 4000 }], searchMs: 20, maxMs: 240000, dpWork: 1.5e7 },
+  full: { label: "Gründlich", passes: [{ step: 40, search: true }, { step: 20, search: true }, { step: 10 }, { random: true, search: 0.3, patience: 15000 }], searchMs: 40, maxMs: 2400000, dpWork: 4e7 }
 };
 
 /**
@@ -1636,7 +1637,7 @@ const QUALITY_PRESETS = {
  */
 function genOptions(quality, nmax, res, maxMs) {
   const q = QUALITY_PRESETS[quality];
-  return { nmax, passes: q.passes, searchMs: q.searchMs, searchMaxCount: nmax, maxMs: maxMs || q.maxMs, grow: true, res: res || 1 };
+  return { nmax, passes: q.passes, searchMs: q.searchMs, searchMaxCount: Math.min(nmax, 60), maxMs: maxMs || q.maxMs, grow: true, res: res || 1, dpWork: q.dpWork };
 }
 
 /**
@@ -1647,10 +1648,15 @@ function genOptions(quality, nmax, res, maxMs) {
 const GEN_CALLS = { fast: { calls: 25000, searches: 1800 }, std: { calls: 46000, searches: 4400 }, full: { calls: 73000, searches: 10400 } };
 
 /**
- * Faktor, mit dem der Aufwand mit Höchstanzahl und Raster wächst (grobe Näherung).
- * @param {number} nmax @returns {number}
+ * Faktor, mit dem die Zahl der Löser-Aufrufe mit der Höchstanzahl wächst (aus Messungen):
+ * etwas stärker als proportional, auf einem groben Raster aber begrenzt, weil es dort nur
+ * wenige verschiedene Kartons gibt.
+ * @param {number} nmax @param {number} M0 längste Kartonkante in Rastereinheiten @returns {number}
  */
-function genScale(nmax) { return Math.pow(nmax / 30, 1.4); }
+function genScale(nmax, M0) {
+  const x = Math.pow(nmax / 30, 1.1), sat = 2.3 * Math.pow(M0 / 60, 2);
+  return x / (1 + x / sat) * (1 + 1 / sat);
+}
 
 /**
  * Schätzt die Dauer der Regelerzeugung: misst die Blockmuster-Rechnung an Stichproben und
@@ -1667,21 +1673,22 @@ function estimateRulesMs(binInMM, quality, nmax, res) {
   const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
   const t0 = nowMs();
   let n = -4, sum = 0;
+  const work = QUALITY_PRESETS[quality].dpWork;
   // die ersten Messungen dienen nur dem Anlauf und zählen nicht
-  for (let i = 0; i < 6000 && n < 60 && nowMs() - t0 < 2500; i++) {
+  for (let i = 0; i < 20000 && n < 120 && nowMs() - t0 < 4000; i++) {
     const q = [1 + Math.floor(rand() * M0), 1 + Math.floor(rand() * M1), 1 + Math.floor(rand() * M2)].sort((a, b) => b - a);
     const g = bestGrid(q, bin).count;
-    // geprüft wird vor allem dort, wo schon viele Kartons passen
-    if (g < nmax / 4 || g >= nmax) continue;
+    // geprüft wird vor allem dort, wo schon einige Kartons passen
+    if (g < nmax / 10 || g >= nmax) continue;
     const t1 = nowMs();
-    dpSolve(q, Bint, false, { work: DP_WORK_LIMIT });
+    dpSolve(q, Bint, false, { work });
     if (n >= 0) sum += nowMs() - t1;
     n++;
   }
   const solveMs = n > 0 ? sum / n : 2;
   const g = GEN_CALLS[quality], q = QUALITY_PRESETS[quality];
   // mehr Regeln bei höherer Höchstanzahl, weniger Aufrufe auf einem groben Raster
-  const f = genScale(nmax) * Math.min(1, Math.pow(M0 / 600, 0.8));
+  const f = genScale(nmax, M0) * Math.min(1, Math.pow(M0 / 600, 0.6));
   // Schlussprüfung: jede Linie (w, h) gegen die Regeln
   const sweepMs = (M1 * M2 / 2) * 1500 * f * 1.5e-5;
   return { ms: f * (g.calls * solveMs + g.searches * 0.67 * q.searchMs) + sweepMs, solveMs };
@@ -1741,7 +1748,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     PERMS, termLE, pruneTerms, treeTerms, dagTerms, patternTerms, patternCount, patternLayout, patternRule, pruneCons,
     consHold, ruleText, consText, termText, patternString, parsePattern, dpSolve, dpTable, normalSet, upperBoundInt, searchPack,
-    portfolioSearch, dagFromPlacements, analyzeCarton, generateRules, layeredSearch, patternHasDag, QUALITY_PRESETS,
+    portfolioSearch, dagFromPlacements, analyzeCarton, generateRules, genScale, layeredSearch, patternHasDag, QUALITY_PRESETS,
     genOptions, binKeyOf, packRulesData, unpackRules, rulesToText, numText, dot, vol, regionVertices, lookupRules,
     exampleCarton, verticesInside, reduceTree, bestGrid, addTerms, polyVertices, lpMax, domainRows, simplifyTree, treeCount,
     UNIT_MM, lenText, gridSteps, estimateRulesMs, layoutBlocks, DP_QUICK_WORK, DP_MAX_CELLS, SEARCH_MAX_COUNT, planDpWork

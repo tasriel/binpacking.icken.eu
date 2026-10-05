@@ -122,6 +122,17 @@ function readNums(ids, selId) {
 }
 const QUALITY = QUALITY_PRESETS;
 /** @typedef {{score: number, count: number, cons: Con[], pat: string, src: string, example: number[] | null, id: number}} UiRule */
+/** Größte wählbare Höchstanzahl einer Regelliste */
+const NMAX_LIMIT = 1000;
+/** So viele Regeln zeigt die Tabelle höchstens auf einmal; der Filter „Anzahl“ grenzt ein */
+const RULE_ROWS_MAX = 1500;
+/**
+ * Hinweis unter einer gekürzten Tabelle.
+ * @param {number} shown @param {number} total @returns {string} Tabellenzeile oder leer
+ */
+function moreRowsHtml(shown, total) {
+  return total > shown ? `<tr class="grp"><th colspan="4">Gezeigt sind die ersten ${shown} von ${total} Regeln<span>Mit „Anzahl“ eingrenzen oder die Liste als Textdatei speichern.</span></th></tr>` : "";
+}
 /** Ab so vielen Kartons zeigt die Zeichnung Blöcke statt einzelner Kartons */
 const DRAW_MAX = 1500;
 
@@ -281,8 +292,9 @@ function setRules(data, source) {
   renderRuleStats(); renderFilter(); renderRuleList(); renderResult();
   if (!state.view || state.view.kind === "check") showCheckView();
 }
-function saveRules(/** @type {any} */ data) {
-  try { localStorage.setItem(storageKey(), JSON.stringify(data)); } catch (e) { /* Speicher nicht verfügbar */ }
+/** @param {any} data @returns {boolean} false, wenn der Browser die Liste nicht speichern konnte (zu groß oder kein Speicher) */
+function saveRules(data) {
+  try { localStorage.setItem(storageKey(), JSON.stringify(data)); return true; } catch (e) { return false; }
 }
 /** @param {number[]} c sortiert @returns {{score: number, rule: UiRule | null}} */
 function lookup(c) {
@@ -797,7 +809,7 @@ function setAutoRes(selId, maxDim) { (/** @type {HTMLSelectElement} */ ($(selId)
 /** @returns {{nmax: number, quality: "fast"|"std"|"full", res: number} | null} Einstellungen der Regelerzeugung */
 function genSettings() {
   const nmax = Math.round(+(/** @type {HTMLInputElement} */ ($("#g-nmax"))).value);
-  if (!(nmax >= 2 && nmax <= 200)) return null;
+  if (!(nmax >= 2 && nmax <= NMAX_LIMIT)) return null;
   return { nmax, quality: /** @type {"fast"|"std"|"full"} */ ((/** @type {HTMLSelectElement} */ ($("#g-quality"))).value), res: +(/** @type {HTMLSelectElement} */ ($("#g-res"))).value || 1 };
 }
 /**
@@ -836,7 +848,7 @@ function stopGen() {
 $("#g-stop").addEventListener("click", () => { stopGen(); $("#g-source").textContent = "Berechnung abgebrochen."; if (state.rules.length) loadRulesForBin(); });
 $("#g-start").addEventListener("click", () => {
   const g = genSettings();
-  if (!g) { $("#g-source").textContent = "Die Höchstanzahl muss zwischen 2 und 200 liegen."; return; }
+  if (!g) { $("#g-source").textContent = `Die Höchstanzahl muss zwischen 2 und ${NMAX_LIMIT} liegen.`; return; }
   stopGen();
   genId = ++seq;
   // Zeitlimit: mindestens das der Voreinstellung, bei großen Bins das Vierfache der Schätzung
@@ -876,8 +888,9 @@ function onGenMsg(d) {
     (/** @type {HTMLButtonElement} */ ($("#g-start"))).disabled = false;
     const data = /** @type {RulesData} */ (d.data);
     if (binKey(data.bin) !== binKey(state.bin)) return;
-    saveRules(data);
+    const saved = saveRules(data);
     setRules(data, "new");
+    if (!saved) $("#g-source").textContent += " Die Liste ließ sich in diesem Browser nicht speichern; nach dem Neuladen ist sie weg. Sichere sie mit „Als Textdatei speichern“.";
   }
 }
 /** @returns {RulesData} */
@@ -918,9 +931,12 @@ function renderRuleList() {
   const nmax = state.rulesInfo.nmax;
   const hit = state.carton ? lookup(state.carton).rule : null;
   const rows = [];
-  let cur = -1;
+  let cur = -1, shown = 0, total = 0;
   for (const r of state.rules) {
     if (state.filter !== "all" && String(r.score) !== state.filter) continue;
+    total++;
+    if (shown >= RULE_ROWS_MAX) continue;
+    shown++;
     if (r.score !== cur) {
       cur = r.score;
       const c = state.rules.filter((x) => x.score === cur).length;
@@ -929,7 +945,7 @@ function renderRuleList() {
     const kind = r.src === "search" ? `<span class="tag">verschränkt</span> ` : "";
     rows.push(`<tr class="${hit === r ? "hit" : ""}"><td class="rule">${esc(ruleText(r.cons, r.score, U()))}</td><td class="ex">${r.example ? dimsText(r.example) : "–"}</td><td class="pat">${kind}<span title="${esc(r.pat)}">${esc(r.pat)}</span></td><td><button type="button" class="btn small" data-show-rule="${r.id}">Zeigen</button></td></tr>`);
   }
-  $("#r-list").innerHTML = rows.join("");
+  $("#r-list").innerHTML = rows.join("") + moreRowsHtml(shown, total);
 }
 $("#r-list").addEventListener("click", (e) => {
   const b = /** @type {HTMLElement} */ (e.target).closest("[data-show-rule]");

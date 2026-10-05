@@ -29,7 +29,7 @@
 if (typeof module !== "undefined" && typeof coneLen === "undefined") {
   // eslint-disable-next-line no-var
   var { pruneTerms, addTerms, patternLayout, normalSet, parsePattern, patternString, numText, dot, reduceTree,
-    polyVertices, simplifyTree, treeCount, termLE, layoutBlocks, upperBoundInt, gridSteps, lenText } = require("./packcore.js");
+    polyVertices, simplifyTree, treeCount, termLE, layoutBlocks, upperBoundInt, gridSteps, lenText, genScale } = require("./packcore.js");
   // eslint-disable-next-line no-var
   var { coneHeight, coneLen, coneWid, coneCheck, parseCone, coneNum, analyzeCone, coneVolume } = require("./cone.js");
 }
@@ -949,10 +949,9 @@ function generateConeRules(binMM, opt, onProgress) {
     const B0 = [coneLen(bin, 0), coneWid(bin, 0), H];
     /** @type {{u: number[], score: number, n: number[], p: number[], count: number}[]} */ const seeds = [];
     for (const p of CR_PERMS) {
-      for (let a = 1; a <= nmax; a++) for (let b = 1; b <= nmax; b++) for (let c = 1; c <= nmax; c++) {
+      // nur Gitter bis zur Höchstanzahl und die kleinsten darüber; die Schleifen brechen ab, sobald ein Gitter größer wäre
+      for (let a = 1; a - 1 < nmax; a++) for (let b = 1; (a - 1) * b < nmax && a * (b - 1) < nmax; b++) for (let c = 1; (a - 1) * b * c < nmax && a * (b - 1) * c < nmax && a * b * (c - 1) < nmax; c++) {
         const prod = a * b * c;
-        const minimal = (a - 1) * b * c < nmax && a * (b - 1) * c < nmax && a * b * (c - 1) < nmax;
-        if (prod > nmax && !minimal) continue;
         const n = [a, b, c];
         const u = [Infinity, Infinity, Infinity];
         for (let ax = 0; ax < 3; ax++) u[p[ax]] = B0[ax] / n[ax];
@@ -1040,7 +1039,7 @@ function generateConeRules(binMM, opt, onProgress) {
     stats.lines++;
     let cnt = lineCounts(k, fixed, v0, v1);
     let v = v0;
-    for (let guard = 0; v <= v1 && guard < 600; guard++) {
+    for (let guard = 0; v <= v1 && guard < 600 + 2 * nmax; guard++) {
       const c = cnt[v - v0];
       if (c < nmax) {
         const q = [...fixed];
@@ -1255,12 +1254,12 @@ function estimateConeRulesMs(binMM, quality, nmax, res) {
   const t0 = crNow();
   let n = -4, sum = 0;
   // die ersten Messungen dienen nur dem Anlauf und zählen nicht
-  for (let i = 0; i < 6000 && n < 60 && crNow() - t0 < 2500; i++) {
+  for (let i = 0; i < 20000 && n < 120 && crNow() - t0 < 4000; i++) {
     const q = [1 + Math.floor(rand() * M0), 1 + Math.floor(rand() * M1), 1 + Math.floor(rand() * M2)].sort((a, b) => b - a);
     let g = 0;
     for (const p of CR_PERMS) g = Math.max(g, Math.floor(B0[0] / q[p[0]]) * Math.floor(B0[1] / q[p[1]]) * Math.floor(B0[2] / q[p[2]]));
-    // geprüft wird vor allem dort, wo schon viele Kartons passen
-    if (g < nmax / 4 || g >= nmax) continue;
+    // geprüft wird vor allem dort, wo schon einige Kartons passen
+    if (g < nmax / 10 || g >= nmax) continue;
     const t1 = crNow();
     coneLayerPattern(q, bin, { enough: nmax, workLimit: CONE_QUALITY[quality].workLimit });
     if (n >= 0) sum += crNow() - t1;
@@ -1268,7 +1267,7 @@ function estimateConeRulesMs(binMM, quality, nmax, res) {
   }
   const solveMs = n > 0 ? sum / n : 1;
   // mehr Regeln bei höherer Höchstanzahl, weniger Aufrufe auf einem groben Raster
-  const f = Math.pow(nmax / 30, 1.4) * Math.min(1, Math.pow(M0 / 600, 0.8));
+  const f = genScale(nmax, M0) * Math.min(1, Math.pow(M0 / 600, 0.8));
   // Schlussprüfung: jede Linie (w, h) gegen die Regeln
   const sweepMs = (M1 * M2 / 2) * 4500 * f * 2e-5;
   // die Stichprobe trifft schwerere Fälle als der Lauf im Mittel, deshalb der Faktor
