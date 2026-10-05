@@ -6,8 +6,11 @@
  * Mit --txt entsteht zusätzlich eine Textdatei mit einer Regel pro Zeile.
  *
  * Quader-Bin:
- *   node tools/generate-rules.js <L> <B> <H> [--quality fast|std|full] [--nmax 30] [--out rules] [--txt datei.txt]
+ *   node tools/generate-rules.js <L> <B> <H> [--quality fast|std|full] [--nmax 30] [--res 1|10] [--out rules] [--txt datei.txt]
  *   Beispiel: node tools/generate-rules.js 603 403 404 --quality full
+ *   Großer Bin im cm-Raster: node tools/generate-rules.js 12100 2400 2700 --res 10
+ * Alle Maße in mm. --res ist das Raster der Kartonmaße in mm: 1 (ganze mm) oder 10 (ganze cm).
+ * Ohne Angabe gilt 1 mm bis 2 m größtes Bin-Maß, darüber 1 cm. Vor dem Start erscheint eine Zeitschätzung.
  * Konischer Bin (Öffnung Länge, Breite, Randhöhe, Boden Länge, Breite, Höhe des konischen Teils):
  *   node tools/generate-rules.js --cone <obenL> <obenB> <Rand> <untenL> <untenB> <konischH> [--quality …] [--nmax 30] [--out rules] [--txt datei.txt]
  *   Beispiel: node tools/generate-rules.js --cone 558 374 65 515 336 344 --quality full
@@ -18,12 +21,12 @@ const P = require("../packcore.js");
 const C = require("../cone.js");
 const R = require("../cone-rules.js");
 
-const USAGE = "Aufruf: node tools/generate-rules.js <L> <B> <H> [--quality fast|std|full] [--nmax 30] [--out rules] [--txt datei.txt]\n"
+const USAGE = "Aufruf: node tools/generate-rules.js <L> <B> <H> [--quality fast|std|full] [--nmax 30] [--res 1|10] [--out rules] [--txt datei.txt]\n"
   + "   oder: node tools/generate-rules.js --cone <obenL> <obenB> <Rand> <untenL> <untenB> <konischH> [dieselben Optionen]";
 
 /**
  * @param {string[]} argv
- * @returns {{bin: number[], cone: boolean, quality: "fast" | "std" | "full", nmax: number, out: string, txt: string | null}}
+ * @returns {{bin: number[], cone: boolean, quality: "fast" | "std" | "full", nmax: number, res: number, out: string, txt: string | null}}
  */
 function parseArgs(argv) {
   /** @type {string[]} */ const pos = [];
@@ -43,8 +46,10 @@ function parseArgs(argv) {
   const quality = /** @type {"fast" | "std" | "full"} */ (flags.quality || "full");
   if (!(quality in P.QUALITY_PRESETS)) { console.error(`Unbekannte Genauigkeit „${quality}“.`); process.exit(1); }
   const nmax = Number(flags.nmax || 30);
-  if (!(nmax >= 2 && nmax <= 60)) { console.error("--nmax muss zwischen 2 und 60 liegen."); process.exit(1); }
-  return { bin, cone, quality, nmax, out: flags.out || path.join(__dirname, "..", "rules"), txt: flags.txt || null };
+  if (!(nmax >= 2 && nmax <= 200)) { console.error("--nmax muss zwischen 2 und 200 liegen."); process.exit(1); }
+  const res = flags.res ? Number(flags.res) : (Math.max(...bin) > 2000 ? 10 : 1);
+  if (res !== 1 && res !== 10) { console.error("--res muss 1 (mm) oder 10 (cm) sein."); process.exit(1); }
+  return { bin, cone, quality, nmax, res, out: flags.out || path.join(__dirname, "..", "rules"), txt: flags.txt || null };
 }
 
 /**
@@ -89,14 +94,18 @@ function report(rules, key, t0, aborted, out, txt) {
 }
 
 function main() {
-  const { bin, cone, quality, nmax, out, txt } = parseArgs(process.argv.slice(2));
+  const { bin, cone, quality, nmax, res: grid, out, txt } = parseArgs(process.argv.slice(2));
+  /** @param {number} ms @returns {string} */
+  const mins = (ms) => (ms < 90000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`);
   const t0 = Date.now();
   fs.mkdirSync(out, { recursive: true });
   if (cone) {
     /** @type {import("../cone.js").ConeBin} */ const cb = { topL: bin[0], topW: bin[1], rimH: bin[2], botL: bin[3], botW: bin[4], coneH: bin[5] };
     const err = C.coneBinError(cb);
     if (err) { console.error(err); process.exit(1); }
-    const res = R.generateConeRules(cb, R.coneGenOptions(quality, nmax), progress(t0));
+    const est = R.estimateConeRulesMs(cb, quality, nmax, grid).ms;
+    console.error(`Raster ${grid === 10 ? "1 cm" : "1 mm"}, erwartete Dauer etwa ${mins(est)} (grobe Schätzung)`);
+    const res = R.generateConeRules(cb, R.coneGenOptions(quality, nmax, grid, Math.max(R.CONE_QUALITY[quality].maxMs, 4 * est)), progress(Date.now()));
     process.stderr.write("\n");
     const data = R.packConeRules(res, quality);
     const key = R.coneBinKey(cb);
@@ -106,7 +115,9 @@ function main() {
     report(res.rules, key, t0, res.meta.aborted, out, txt);
     return;
   }
-  const res = P.generateRules(bin, P.genOptions(quality, nmax), progress(t0));
+  const est = P.estimateRulesMs(bin, quality, nmax, grid).ms;
+  console.error(`Raster ${grid === 10 ? "1 cm" : "1 mm"}, erwartete Dauer etwa ${mins(est)} (grobe Schätzung)`);
+  const res = P.generateRules(bin, P.genOptions(quality, nmax, grid, Math.max(P.QUALITY_PRESETS[quality].maxMs, 4 * est)), progress(Date.now()));
   process.stderr.write("\n");
   const data = P.packRulesData(res, quality);
   const key = P.binKeyOf(bin);

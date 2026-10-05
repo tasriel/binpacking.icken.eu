@@ -64,7 +64,7 @@ function rng(seed) {
  * @param {import("../cone-rules.js").ConeRulesData} data @param {number} samples @param {number} seed
  */
 function validateCone(data, samples, seed) {
-  const bin = data.cone, nmax = data.nmax;
+  const bin = data.cone, nmax = data.nmax, grid = data.res || 1;
   const rand = rng(seed);
   const rules = R.unpackConeRules(data).map((r) => {
     const p = R.parseConeAny(r.pat);
@@ -101,13 +101,14 @@ function validateCone(data, samples, seed) {
   console.log(`Belegt: ${rules.length} Regeln, ${checks} Nachbauten, ${bad} Fehler, ${textMismatch} Muster mit abweichender Regel`);
 
   // 2. Vollständig: Zufallskartons gegen Lagenmuster-Löser und schnelle Rechnung
-  const [M0, M1, M2] = [bin.topL, bin.topW, C.coneHeight(bin)].sort((a, b) => b - a).map((v) => Math.floor(v + 1e-9));
+  // Zufallskartons auf dem Raster der Liste (ganze mm oder ganze cm)
+  const [M0, M1, M2] = [bin.topL, bin.topW, C.coneHeight(bin)].sort((a, b) => b - a).map((v) => Math.floor(v / grid + 1e-9));
   let checked = 0, lower = 0, higher = 0, lowerQuick = 0, higherQuick = 0, wrong = 0;
   /** @type {string[]} */ const examples = [];
   const t0 = Date.now();
   while (checked < samples) {
-    const c = [Math.floor(rand() * M0) + 1, Math.floor(rand() * M1) + 1, Math.floor(rand() * M2) + 1].sort((a, b) => b - a);
-    if (c[1] > M1 || c[2] > M2) continue;
+    const c = [Math.floor(rand() * M0) + 1, Math.floor(rand() * M1) + 1, Math.floor(rand() * M2) + 1].sort((a, b) => b - a).map((v) => v * grid);
+    if (c[1] > M1 * grid || c[2] > M2 * grid) continue;
     const hit = R.lookupConeRules(rules, c);
     if (hit.index >= 0) {
       const placed = R.coneLayout(rules[hit.index].root, c, bin);
@@ -124,7 +125,7 @@ function validateCone(data, samples, seed) {
     if (quick < hit.score) higherQuick++;
   }
   const pct = (/** @type {number} */ n) => (100 * n / Math.max(1, checked)).toFixed(2) + " %";
-  console.log(`Vollständig: ${checked} Kartons unter ${nmax} geprüft in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${wrong} Muster ungültig`);
+  console.log(`Vollständig: ${checked} Kartons unter ${nmax} im Raster ${grid} mm geprüft in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${wrong} Muster ungültig`);
   console.log(`  Liste unter Lagenmuster-Löser: ${lower} (${pct(lower)}), darüber: ${higher} (${pct(higher)})`);
   console.log(`  Liste unter schneller Rechnung von „Karton prüfen“: ${lowerQuick} (${pct(lowerQuick)}), darüber: ${higherQuick} (${pct(higherQuick)})`);
   if (examples.length) console.log("  Beispiele: " + examples.join("; "));
@@ -136,7 +137,7 @@ function main() {
   /** @type {any} */ const raw = JSON.parse(fs.readFileSync(file, "utf8"));
   if (raw.cone) { validateCone(raw, samples, seed); return; }
   /** @type {import("../packcore.js").RulesData} */ const data = raw;
-  const bin = data.bin, nmax = data.nmax;
+  const bin = data.bin, nmax = data.nmax, grid = data.res || 1;
   const rules = P.unpackRules(data);
   const rand = rng(seed);
 
@@ -163,17 +164,18 @@ function main() {
   console.log(`Belegt: ${rules.length} Regeln, ${checks} Nachbauten, ${bad} Fehler, ${textMismatch} Muster mit abweichender Regel`);
 
   // 2. Vollständig
+  // Zufallskartons auf dem Raster der Liste (ganze mm oder ganze cm)
   const B = bin.map((v) => Math.floor(v + 1e-9));
-  const [M0, M1, M2] = [...B].sort((a, b) => b - a);
+  const [M0, M1, M2] = [...B].sort((a, b) => b - a).map((v) => Math.floor(v / grid));
   let checked = 0, lower = 0, higher = 0;
   /** @type {string[]} */ const examples = [];
   const t0 = Date.now();
   while (checked < samples) {
-    const c = [Math.floor(rand() * M0) + 1, Math.floor(rand() * M1) + 1, Math.floor(rand() * M2) + 1].sort((a, b) => b - a);
-    if (c[1] > M1 || c[2] > M2) continue;
+    const c = [Math.floor(rand() * M0) + 1, Math.floor(rand() * M1) + 1, Math.floor(rand() * M2) + 1].sort((a, b) => b - a).map((v) => v * grid);
+    if (c[1] > M1 * grid || c[2] > M2 * grid) continue;
     const listed = P.lookupRules(rules, c).score;
     if (listed >= nmax) continue;
-    const dp = P.dpSolve(c, B, true);
+    const dp = P.dpSolve(c, B, true, { work: 4e7 });
     let solver = dp ? Math.min(dp.count, nmax) : 0;
     if (searchMs > 0 && solver === listed && solver < nmax && P.upperBoundInt(c, B) > solver) {
       const r = P.portfolioSearch(c, B, solver + 1, searchMs);
@@ -184,7 +186,7 @@ function main() {
     if (solver < listed) higher++;
   }
   const pct = (/** @type {number} */ n) => (100 * n / Math.max(1, checked)).toFixed(2) + " %";
-  console.log(`Vollständig: ${checked} Kartons unter ${nmax} geprüft in ${((Date.now() - t0) / 1000).toFixed(0)} s` + (searchMs ? ` (mit Suche ${searchMs} ms)` : " (nur Blockmuster)"));
+  console.log(`Vollständig: ${checked} Kartons unter ${nmax} im Raster ${grid} mm geprüft in ${((Date.now() - t0) / 1000).toFixed(0)} s` + (searchMs ? ` (mit Suche ${searchMs} ms)` : " (nur Blockmuster)"));
   console.log(`  Liste unter Löser: ${lower} (${pct(lower)})`);
   console.log(`  Liste über Blockmustern dank verschränkter Muster: ${higher} (${pct(higher)})`);
   if (examples.length) console.log("  Beispiele: " + examples.join("; "));

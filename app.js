@@ -11,17 +11,119 @@ function fmt(v) {
   const s = t.toFixed(1).replace(".", ",");
   return s.endsWith(",0") ? s.slice(0, -2) : s;
 }
-/** @param {number[]} c @returns {string} */
-const dimsText = (c) => c.map(fmt).join(" × ");
+/* ---------- Einheiten ----------
+ * Gerechnet wird immer in mm. Jede Maßgruppe (Bin, Karton) hat ihre eigene Eingabeeinheit.
+ * Die Anzeige (Ergebnisse, Positionen, Regeln) hat eine Einheit für die ganze Seite. Sie
+ * folgt der zuletzt gewählten Eingabeeinheit und lässt sich mit den Knöpfen „Anzeige“ umstellen.
+ */
+/** Größtes zulässiges Maß in mm (100 m) */
+const MAX_MM = 100000;
+/** @typedef {"mm" | "cm" | "m"} Unit */
+const UNIT_STORE = "kartonregeln:einheiten";
+/** @type {Record<string, string>} Schrittweite der Eingabefelder je Einheit (immer 0,1 mm) */
+const UNIT_STEP = { mm: "0.1", cm: "0.01", m: "0.0001" };
+const units = {
+  /** @type {Record<string, Unit>} Eingabeeinheit je Maßgruppe, Schlüssel = id des Auswahlfelds */
+  input: {},
+  disp: /** @type {Unit} */ ("mm")
+};
+try {
+  const saved = JSON.parse(localStorage.getItem(UNIT_STORE) || "null");
+  if (saved && saved.input && UNIT_MM[saved.disp]) { units.input = saved.input; units.disp = saved.disp; }
+} catch (e) { /* Speicher nicht verfügbar */ }
+function saveUnits() { try { localStorage.setItem(UNIT_STORE, JSON.stringify(units)); } catch (e) { /* Speicher nicht verfügbar */ } }
+/** @returns {Unit} Einheit der Anzeige */
+const U = () => units.disp;
+/**
+ * Länge in der Anzeigeeinheit, mit Dezimalkomma, auf 0,1 mm genau.
+ * @param {number} mm @returns {string}
+ */
+function len(mm) { return lenText(Math.round(mm * 10) / 10, units.disp).replace(".", ","); }
+/** @param {number[]} c Maße in mm @returns {string} in der Anzeigeeinheit, ohne Einheit dahinter */
+const dimsText = (c) => c.map(len).join(" × ");
+/** @param {number} ms @returns {string} z. B. "etwa 40 s", "etwa 12 min" */
+function durText(ms) {
+  const sec = ms / 1000;
+  if (sec < 1.5) return "etwa 1 s";
+  if (sec < 90) return `etwa ${sec < 10 ? Math.round(sec) : Math.round(sec / 5) * 5} s`;
+  if (sec < 5400) return `etwa ${Math.round(sec / 60)} min`;
+  return `etwa ${String(Math.round(sec / 360) / 10).replace(".", ",")} h`;
+}
+/** @type {(() => void)[]} zeichnen alles neu, was Maße zeigt (nach einem Wechsel der Anzeigeeinheit) */
+const rerenderHooks = [];
+function rerenderAll() {
+  document.querySelectorAll(".disp-switch button").forEach((b) => b.setAttribute("aria-pressed", String((/** @type {HTMLElement} */ (b)).dataset.disp === units.disp)));
+  document.querySelectorAll(".disp-unit").forEach((el) => { el.textContent = units.disp; });
+  for (const f of rerenderHooks) f();
+}
+/** @param {Unit} u */
+function setDisplayUnit(u) { units.disp = u; saveUnits(); rerenderAll(); }
+/**
+ * Verbindet ein Auswahlfeld mm / cm / m mit seinen Eingabefeldern. Beim Umstellen werden
+ * die Zahlen umgerechnet, die Maße selbst bleiben gleich.
+ * @param {string} selId id des Auswahlfelds (mit #) @param {string[]} inputIds ids der Eingabefelder (mit #)
+ */
+function bindUnitSelect(selId, inputIds) {
+  const sel = /** @type {HTMLSelectElement} */ ($(selId));
+  /** @param {Unit} from @param {Unit} to */
+  const convert = (from, to) => {
+    for (const id of inputIds) {
+      const el = /** @type {HTMLInputElement} */ ($(id));
+      const v = parseFloat(String(el.value).replace(",", "."));
+      if (isFinite(v) && from !== to) el.value = lenText(Math.round(v * UNIT_MM[from] * 10) / 10, to);
+      el.step = UNIT_STEP[to];
+    }
+  };
+  const start = units.input[selId] || "mm";
+  sel.value = start;
+  convert("mm", start);
+  sel.addEventListener("change", () => {
+    const from = units.input[selId] || "mm", to = /** @type {Unit} */ (sel.value);
+    units.input[selId] = to;
+    convert(from, to);
+    setDisplayUnit(to);
+  });
+}
+/**
+ * Merkt sich eingegebene Maße (in mm) für den nächsten Besuch.
+ * @param {string} key @param {number[]} mm
+ */
+function saveDims(key, mm) { try { localStorage.setItem("kartonregeln:" + key, JSON.stringify(mm)); } catch (e) { /* Speicher nicht verfügbar */ } }
+/**
+ * Schreibt gemerkte Maße zurück in ihre Eingabefelder.
+ * @param {string} key @param {string[]} ids @param {string} selId @returns {number[] | null} die Maße in mm
+ */
+function restoreDims(key, ids, selId) {
+  try {
+    const v = JSON.parse(localStorage.getItem("kartonregeln:" + key) || "null");
+    if (!Array.isArray(v) || v.length !== ids.length || !v.every((x) => typeof x === "number" && x > 0 && x <= MAX_MM)) return null;
+    ids.forEach((id, i) => writeLen(id, v[i], selId));
+    return v;
+  } catch (e) { return null; }
+}
+/** @param {string} selId @returns {Unit} gewählte Eingabeeinheit */
+const unitOf = (selId) => units.input[selId] || "mm";
+/**
+ * Schreibt ein Maß in mm in ein Eingabefeld, in dessen Eingabeeinheit.
+ * @param {string} id @param {number} mm @param {string} selId
+ */
+function writeLen(id, mm, selId) { (/** @type {HTMLInputElement} */ ($(id))).value = lenText(mm, unitOf(selId)); }
 /** @param {string} s @returns {string} */
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch] || ch));
-/** @param {string[]} ids @returns {number[] | null} */
-function readNums(ids) {
-  const v = ids.map((id) => parseFloat(String(/** @type {HTMLInputElement} */ ($(id)).value).replace(",", ".")));
-  return v.every((x) => isFinite(x) && x > 0 && x <= 10000) ? v : null;
+/**
+ * Liest Maße aus Eingabefeldern und rechnet sie in mm um (auf 0,1 mm gerundet).
+ * @param {string[]} ids @param {string} selId Auswahlfeld mit der Eingabeeinheit
+ * @returns {number[] | null} null, wenn ein Maß fehlt, nicht positiv oder größer als 100 m ist
+ */
+function readNums(ids, selId) {
+  const f = UNIT_MM[unitOf(selId)];
+  const v = ids.map((id) => Math.round(parseFloat(String(/** @type {HTMLInputElement} */ ($(id)).value).replace(",", ".")) * f * 10) / 10);
+  return v.every((x) => isFinite(x) && x > 0 && x <= MAX_MM) ? v : null;
 }
 const QUALITY = QUALITY_PRESETS;
-/** @typedef {{score: number, count: number, cons: Con[], pat: string, src: string, example: number[] | null, text: string, id: number}} UiRule */
+/** @typedef {{score: number, count: number, cons: Con[], pat: string, src: string, example: number[] | null, id: number}} UiRule */
+/** Ab so vielen Kartons zeigt die Zeichnung Blöcke statt einzelner Kartons */
+const DRAW_MAX = 1500;
 
 const state = {
   bin: /** @type {number[]} */ ([603, 403, 404]),
@@ -82,23 +184,28 @@ let seq = 0;
 
 /* ---------- Bin ---------- */
 function readBin() {
-  const b = readNums(["#bin-l", "#bin-b", "#bin-h"]);
+  const b = readNums(["#bin-l", "#bin-b", "#bin-h"], "#bin-unit");
   const err = $("#bin-err");
-  if (!b) { err.textContent = "Bitte drei positive Maße bis 10000 mm eingeben."; err.hidden = false; return null; }
+  if (!b) { err.textContent = "Bitte drei positive Maße bis 100 m eingeben."; err.hidden = false; return null; }
   err.hidden = true;
   return b;
 }
 let binTimer = 0;
-$("#bin-form").addEventListener("input", () => {
+$("#bin-form").addEventListener("input", (e) => {
+  // ein Wechsel der Einheit rechnet nur die Zahlen um, die Maße bleiben gleich
+  if ((/** @type {HTMLElement} */ (e.target)).id === "bin-unit") return;
   clearTimeout(binTimer);
   binTimer = window.setTimeout(() => {
     const b = readBin();
     if (!b) return;
     state.bin = b;
+    saveDims("quader-bin", b);
     state.view = null;
     stopGen();
+    setAutoRes("#g-res", Math.max(...b));
     loadRulesForBin();
     startCheck();
+    requestGenEstimate();
   }, 400);
 });
 $("#bin-form").addEventListener("submit", (e) => e.preventDefault());
@@ -106,7 +213,7 @@ $("#bin-form").addEventListener("submit", (e) => e.preventDefault());
 /* ---------- Regeln laden, speichern, nachschlagen ---------- */
 /** @param {RulesData} data @returns {UiRule[]} */
 function inflateRules(data) {
-  return unpackRules(data).map((r, i) => ({ ...r, example: exampleCarton(regionVertices(r.cons)), text: ruleText(r.cons, r.score), id: i }));
+  return unpackRules(data).map((r, i) => ({ ...r, example: exampleCarton(regionVertices(r.cons), data.res || 1), id: i }));
 }
 function storageKey() { return "kartonregeln:" + binKey(state.bin); }
 /** @type {Map<string, RulesData | null>} */ const preCache = new Map();
@@ -141,22 +248,34 @@ async function loadRulesForBin() {
   if (pre && (!data || rank(pre) > rank(data))) { data = pre; source = "pre"; }
   if (data && data.rules) setRules(data, source); else setRules(null, "");
 }
+/** @param {number} res @returns {string} */
+const resText = (res) => (res === 10 ? "1 cm" : "1 mm");
+/** Zeile unter den Knöpfen: woher die Liste stammt, oder dass es noch keine gibt */
+function renderSource() {
+  const info = state.rulesInfo;
+  if (!info) {
+    $("#g-source").textContent = `Für ${dimsText(state.bin)} ${U()} gibt es noch keine Regelliste. Wähle Raster und Genauigkeit und starte die Berechnung. Sie läuft im Hintergrund, du kannst die Seite währenddessen weiter benutzen.`;
+    return;
+  }
+  const q = QUALITY[/** @type {"fast"|"std"|"full"} */ (info.quality)];
+  const when = info.source === "pre" ? "Vorberechnet" : info.source === "saved" ? "In diesem Browser gespeichert" : "Gerade berechnet";
+  $("#g-source").textContent = `${when}: ${state.rules.length} Regeln für ${dimsText(state.bin)} ${U()}, Höchstanzahl ${info.nmax}, Genauigkeit „${q ? q.label : info.quality}“, Raster ${resText(info.res)}.`
+    + (info.meta && info.meta.aborted ? " Die Berechnung hat ihr Zeitlimit erreicht; die Liste kann Lücken haben." : "");
+}
 /** @param {any} data @param {string} source */
 function setRules(data, source) {
   if (!data) {
     state.rules = []; state.rulesInfo = null;
     $("#r-body").hidden = true;
-    $("#g-source").innerHTML = `Für ${dimsText(state.bin)} mm gibt es noch keine Regelliste. Wähle die Genauigkeit und starte die Berechnung. Sie läuft im Hintergrund, du kannst die Seite währenddessen weiter benutzen.`;
+    renderSource();
     renderResult();
     if (!state.view || state.view.kind === "check") showCheckView();
     return;
   }
   state.rules = inflateRules({ ...data, bin: state.bin });
-  state.rulesInfo = { nmax: data.nmax, quality: data.quality, source, meta: data.meta, stats: data.stats };
+  state.rulesInfo = { nmax: data.nmax, quality: data.quality, source, meta: data.meta, stats: data.stats, res: data.res || 1 };
   (/** @type {HTMLInputElement} */ ($("#g-nmax"))).value = String(data.nmax);
-  const q = QUALITY[/** @type {"fast"|"std"|"full"} */ (data.quality)];
-  const when = source === "pre" ? "Vorberechnet" : source === "saved" ? "In diesem Browser gespeichert" : "Gerade berechnet";
-  $("#g-source").textContent = `${when}: ${state.rules.length} Regeln für ${dimsText(state.bin)} mm, Höchstanzahl ${data.nmax}, Genauigkeit „${q ? q.label : data.quality}“.`;
+  renderSource();
   $("#r-body").hidden = false;
   state.filter = "all";
   renderRuleStats(); renderFilter(); renderRuleList(); renderResult();
@@ -174,40 +293,104 @@ function lookup(c) {
 
 /* ---------- Karton prüfen ---------- */
 let checkJob = /** @type {{stop: () => void} | null} */ (null);
-/** Rechenzeit für „Genau rechnen“ in ms. Die schnelle Rechnung nutzt nur Blockmuster. */
-const EXACT_MS = 6000;
-/** @param {boolean} [exact] true = mit Suche nach verschränkten Mustern */
-function startCheck(exact = false) {
-  const dims = readNums(["#ck-a", "#ck-b", "#ck-c"]);
+/**
+ * Stufen für „Genau rechnen“. dpWork: Aufwand für die Blockmuster (reicht er nicht für die
+ * vollständige Rechnung, bleibt das Ergebnis ungefähr). searchMs: Zeit für die Suche nach
+ * verschränkten Mustern (nur bis SEARCH_MAX_COUNT Kartons möglich).
+ * Die schnelle Rechnung nutzt DP_QUICK_WORK und sucht nicht.
+ * @typedef {{key: string, label: string, dpWork: number, searchMs: number}} ExactLevel
+ * @type {ExactLevel[]}
+ */
+const EXACT_LEVELS = [
+  { key: "1", label: "Gründlich", dpWork: 1e9, searchMs: 6000 },
+  { key: "2", label: "Sehr gründlich", dpWork: 3e10, searchMs: 30000 },
+  { key: "3", label: "Maximal", dpWork: 1e12, searchMs: 120000 }
+];
+/**
+ * Welche Stufen bringen gegenüber dem vorliegenden Ergebnis noch etwas, und wie lange dauern sie?
+ * @param {{effort?: DpEffort, approx?: boolean, searchable?: boolean, done?: {dpWork: number, searchMs: number}}} ck
+ * @param {ExactLevel[]} levels
+ * @param {(level: ExactLevel) => number} [planWork] Aufwand, den die Stufe wirklich treiben würde
+ *   (ohne Angabe: der kleinere Wert aus Stufe und vollständiger Rechnung)
+ * @returns {{level: ExactLevel, ms: number}[]}
+ */
+function exactOptions(ck, levels, planWork) {
+  const e = ck.effort;
+  if (!e) return [];
+  const done = ck.done || { dpWork: 0, searchMs: 0 };
+  // Rechenzeit je Aufwandseinheit, aus der letzten Rechnung in diesem Browser gemessen
+  const rate = e.work > 2e6 && e.ms > 3 ? e.ms / e.work : 5e-6;
+  /** @type {{level: ExactLevel, ms: number}[]} */ const out = [];
+  let lastWork = e.work, lastSearch = done.searchMs;
+  for (const level of levels) {
+    const w = planWork ? planWork(level) : Math.min(level.dpWork, e.fullWork);
+    const moreDp = !!ck.approx && w > lastWork * 1.5;
+    const moreSearch = !!ck.searchable && level.searchMs > lastSearch;
+    if (!moreDp && !moreSearch) continue;
+    out.push({ level, ms: (moreDp ? w * rate : 0) + (moreSearch ? level.searchMs : 0) });
+    if (moreDp) lastWork = w;
+    if (moreSearch) lastSearch = level.searchMs;
+  }
+  return out;
+}
+/**
+ * Auswahl der Stufe mit erwarteter Dauer und Startknopf.
+ * @param {{level: ExactLevel, ms: number}[]} opts @param {string} chosen gewählte Stufe @param {string} prefix "ck" oder "cc"
+ * @returns {string}
+ */
+function exactControls(opts, chosen, prefix) {
+  if (!opts.length) return "";
+  const sel = opts.some((o) => o.level.key === chosen) ? chosen : opts[0].level.key;
+  return ` <select class="lvl" id="${prefix}-level" aria-label="Genauigkeit der genauen Rechnung">${opts.map((o) => `<option value="${o.level.key}"${o.level.key === sel ? " selected" : ""}>${o.level.label} · ${durText(o.ms)}</option>`).join("")}</select>
+    <button type="button" class="btn small" id="${prefix}-exact">Genau rechnen</button>`;
+}
+/** @param {any} ck Stand der Kartonprüfung @returns {{level: ExactLevel, ms: number}[]} Stufen, die noch etwas bringen */
+function boxExactOptions(ck) {
+  const c = state.carton;
+  return exactOptions(ck, EXACT_LEVELS, c ? (level) => planDpWork(c, state.bin, level.dpWork).work : undefined);
+}
+let checkLevel = "1";
+/** @param {ExactLevel | null} [level] null = schnelle Rechnung, sonst genaue Rechnung in dieser Stufe */
+function startCheck(level = null) {
+  const dims = readNums(["#ck-a", "#ck-b", "#ck-c"], "#ck-unit");
   if (!dims) { state.carton = null; state.check = null; renderResult(); showCheckView(); return; }
+  saveDims("quader-karton", dims);
   state.carton = [...dims].sort((a, b) => b - a);
   const id = ++seq;
-  const prev = exact ? state.check : null;
-  state.check = prev ? { ...prev, id, mode: "exact", final: false } : { id, carton: state.carton, count: null, status: "run", pat: null, final: false, mode: exact ? "exact" : "quick" };
+  const prev = level ? state.check : null;
+  const opt = prev && level ? boxExactOptions(prev).find((o) => o.level === level) : null;
+  const estMs = opt ? opt.ms : 0;
+  state.check = prev ? { ...prev, id, mode: "exact", final: false, estMs, level } : { id, carton: state.carton, count: null, status: "run", pat: null, final: false, mode: "quick", estMs: 0, level: null };
   if (checkJob) checkJob.stop();
-  const msg = { type: "check", id, carton: state.carton, bin: state.bin, budget: exact ? EXACT_MS : 0 };
+  const msg = { type: "check", id, carton: state.carton, bin: state.bin, budget: level ? level.searchMs : 0, dpWork: level ? level.dpWork : DP_QUICK_WORK };
   const local = () => {
     if (!state.check || state.check.id !== id) return;
-    const a = analyzeCarton(msg.carton, msg.bin, exact ? 1500 : 0);
-    onCheckMsg({ type: "check", id, phase: "final", count: a.count, upper: a.upper, status: a.status, pat: a.pattern ? patternString(a.pattern) : null, mixed: a.mixed });
+    // ohne Hintergrundrechnung blockiert die Seite, deshalb hier nur wenig Aufwand
+    const a = analyzeCarton(msg.carton, msg.bin, level ? 1500 : 0, undefined, { dpWork: Math.min(msg.dpWork, 3e8) });
+    onCheckMsg({ type: "check", id, phase: "final", count: a.count, upper: a.upper, status: a.status, pat: a.pattern ? patternString(a.pattern) : null, mixed: a.mixed, approx: a.approx, searchable: a.searchable, effort: a.effort });
   };
   const timeout = () => {
     if (!state.check || state.check.id !== id) return;
     state.check.final = true;
     renderResult();
   };
-  checkJob = startJob(msg, onCheckMsg, local, (d) => d.phase === "final", msg.budget, timeout);
+  checkJob = startJob(msg, onCheckMsg, local, (d) => d.phase === "final", level ? estMs * 4 + level.searchMs + 20000 : 15000, timeout);
   renderResult();
 }
 /** @param {any} d */
 function onCheckMsg(d) {
   if (!state.check || d.id !== state.check.id) return;
-  Object.assign(state.check, { count: d.count, upper: d.upper, status: d.status, pat: d.pat, mixed: d.mixed, final: d.phase === "final" });
+  const ck = state.check;
+  Object.assign(ck, { count: d.count, upper: d.upper, status: d.status, pat: d.pat, mixed: d.mixed, approx: d.approx, searchable: d.searchable, effort: d.effort, final: d.phase === "final" });
+  if (ck.final) ck.done = ck.level ? { dpWork: ck.level.dpWork, searchMs: ck.level.searchMs } : { dpWork: 0, searchMs: 0 };
   renderResult();
   if (!state.view || state.view.kind === "check") showCheckView();
 }
 let ckTimer = 0;
-$("#ck-form").addEventListener("input", () => { clearTimeout(ckTimer); ckTimer = window.setTimeout(() => startCheck(), 350); });
+$("#ck-form").addEventListener("input", (e) => {
+  if ((/** @type {HTMLElement} */ (e.target)).id === "ck-unit") return;
+  clearTimeout(ckTimer); ckTimer = window.setTimeout(() => startCheck(), 350);
+});
 $("#ck-form").addEventListener("submit", (e) => e.preventDefault());
 
 /** Bestes bekanntes Ergebnis: eigener Löser oder Regelliste */
@@ -224,35 +407,50 @@ function bestForCarton() {
 function renderResult() {
   const el = $("#ck-result");
   const ck = state.check;
-  if (!state.carton || !ck) { el.innerHTML = `<div class="r-count">–</div><div class="r-main">Bitte drei positive Maße eingeben.</div>`; return; }
+  if (!state.carton || !ck) { el.innerHTML = `<div class="r-count">–</div><div class="r-main">Bitte drei positive Maße bis 100 m eingeben.</div>`; return; }
   const best = bestForCarton();
   const nmax = state.rulesInfo ? state.rulesInfo.nmax : null;
+  const opts = ck.final ? boxExactOptions(ck) : [];
   let chip;
   if (ck.count == null || !best) chip = `<span class="chip run">rechnet</span>`;
   else if (best.count >= ck.upper || (ck.final && ck.status === "optimal" && best.count >= ck.count)) chip = `<span class="chip ok">optimal, mehr passen nicht</span>`;
-  else if (!ck.final) chip = ck.mode === "exact" ? `<span class="chip run">rechnet genau</span> <button type="button" class="btn small" id="ck-cancel">Abbrechen</button>` : `<span class="chip run">rechnet</span>`;
-  else if (ck.mode === "quick") chip = `<span class="chip open">schnelle Rechnung, mehr ist möglich</span> <button type="button" class="btn small" id="ck-exact">Genau rechnen</button>`;
-  else chip = `<span class="chip open">offen: ${best.count + 1} nicht ausgeschlossen</span>`;
+  else if (!ck.final) chip = ck.mode === "exact" ? `<span class="chip run">rechnet genau, ${durText(ck.estMs)}</span> <button type="button" class="btn small" id="ck-cancel">Abbrechen</button>` : `<span class="chip run">rechnet</span>`;
+  else {
+    const label = ck.approx ? "ungefähr: vereinfacht gerechnet" : ck.mode === "quick" && ck.searchable ? "ungefähr: schnelle Rechnung, nur Blockmuster" : ck.searchable || ck.mixed ? `offen: ${best.count + 1} nicht ausgeschlossen` : "bestes Blockmuster";
+    chip = `<span class="chip open">${label} · höchstens ${ck.upper} möglich</span>${exactControls(opts, checkLevel, "ck")}`;
+  }
   const count = best && best.count >= 0 ? best.count : "…";
   const parts = [];
+  if (ck.final && ck.count != null && best && best.count < ck.upper && !opts.length && !ck.searchable) {
+    parts.push(`<span>${ck.approx ? "Mehr Aufwand ist hier nicht möglich." : "Die Blockmuster sind vollständig gerechnet."} Verschränkte Muster sucht die Seite nur bis ${SEARCH_MAX_COUNT} Kartons; ob mehr als ${best.count} passen, bleibt offen.</span>`);
+  }
   if (best && best.list && state.rules.length) {
     const L = best.list;
-    if (best.source === "list") parts.push(`Das Muster stammt aus der Regelliste. Der Einzellöser hat ${ck.count} gefunden.`);
-    else if (L.rule && ck.count != null && Math.min(ck.count, nmax || Infinity) > L.score) parts.push(`Die Regelliste kennt hier nur ${L.score}. <button type="button" class="link" id="add-rule">Muster als Regel übernehmen</button>`);
-    else if (L.rule) parts.push(`Laut Regelliste ${L.score}${nmax && L.score >= nmax ? " oder mehr" : ""} · <button type="button" class="link" data-show-rule="${L.rule.id}">Regel ${L.rule.id + 1} anzeigen</button>`);
+    if (best.source === "list") parts.push(`<span>Das Muster stammt aus der Regelliste. Der Einzellöser hat ${ck.count} gefunden.</span>`);
+    else if (L.rule && ck.count != null && Math.min(ck.count, nmax || Infinity) > L.score) parts.push(`<span>Die Regelliste kennt hier nur ${L.score}. <button type="button" class="link" id="add-rule">Muster als Regel übernehmen</button></span>`);
+    else if (L.rule) parts.push(`<span>Laut Regelliste ${L.score}${nmax && L.score >= nmax ? " oder mehr" : ""} · <button type="button" class="link" data-show-rule="${L.rule.id}">Regel ${L.rule.id + 1} anzeigen</button></span>`);
   }
   el.innerHTML = `<div class="r-count">${count}<small>${count === 1 ? "Karton" : "Kartons"}</small></div>
-    <div class="r-main"><span>à <b>${dimsText(state.carton)}</b> mm im Bin ${dimsText(state.bin)}</span>${chip}</div>
+    <div class="r-main"><span>à <b>${dimsText(state.carton)}</b> ${U()} im Bin ${dimsText(state.bin)} ${U()}</span>${chip}</div>
     <div class="r-sub">${parts.join(" ") || "&nbsp;"}</div>`;
   if (state.rules.length) markHit();
 }
+$("#ck-result").addEventListener("change", (e) => {
+  const t = /** @type {HTMLSelectElement} */ (e.target);
+  if (t.id === "ck-level") checkLevel = t.value;
+});
 $("#ck-result").addEventListener("click", (e) => {
   const t = /** @type {HTMLElement} */ (e.target);
   if (t.id === "add-rule") addCheckAsRule();
-  if (t.id === "ck-exact") startCheck(true);
+  if (t.id === "ck-exact") {
+    const sel = /** @type {HTMLSelectElement | null} */ (document.querySelector("#ck-level"));
+    const level = EXACT_LEVELS.find((l) => l.key === (sel ? sel.value : checkLevel));
+    if (level) { checkLevel = level.key; startCheck(level); }
+  }
   if (t.id === "ck-cancel" && state.check) {
     if (checkJob) checkJob.stop();
-    state.check = { ...state.check, id: ++seq, mode: "quick", final: true };
+    const done = state.check.done;
+    state.check = { ...state.check, id: ++seq, final: true, mode: done && done.searchMs > 0 ? "exact" : "quick" };
     renderResult();
   }
   const sr = t.closest("[data-show-rule]");
@@ -264,7 +462,7 @@ function addCheckAsRule() {
   const pat = parsePattern(ck.pat);
   const rule = patternRule(pat, state.bin);
   const nmax = state.rulesInfo.nmax;
-  const r = { score: Math.min(rule.count, nmax), count: rule.count, cons: rule.cons, pat: ck.pat, src: "manual", example: exampleCarton(regionVertices(rule.cons)), text: ruleText(rule.cons, Math.min(rule.count, nmax)), id: state.rules.length };
+  const r = { score: Math.min(rule.count, nmax), count: rule.count, cons: rule.cons, pat: ck.pat, src: "manual", example: exampleCarton(regionVertices(rule.cons)), id: state.rules.length };
   state.rules.push(r);
   state.rules.sort((a, b) => (b.score - a.score) || (vol(b.example) - vol(a.example)));
   state.rules.forEach((x, i) => { x.id = i; });
@@ -296,8 +494,8 @@ function showPattern(pattern, patStr, eyebrow, kind) {
     if (!ex) { note = "Mit diesem Bin passt das Muster für keinen Karton."; carton = null; }
     else {
       if (carton) {
-        const bad = rule.cons.filter((k) => dot(k.t, carton) > k.D + 1e-7).map((k) => `${termText(k.t)} ≤ ${numText(k.D)}`);
-        note = `Dein Karton ${dimsText(carton)} passt nicht in dieses Muster (verletzt: ${bad.join(", ")}). Gezeigt mit dem größten passenden Karton ${dimsText(ex)} mm.`;
+        const bad = rule.cons.filter((k) => dot(k.t, carton) > k.D + 1e-7).map((k) => `${termText(k.t)} ≤ ${len(k.D)}`);
+        note = `Dein Karton ${dimsText(carton)} ${U()} passt nicht in dieses Muster (verletzt: ${bad.join(", ")}). Gezeigt mit dem größten passenden Karton ${dimsText(ex)} ${U()}.`;
       }
       carton = ex;
     }
@@ -333,10 +531,10 @@ const ORIENT = {
 };
 /** @param {{p: number[]}} q @returns {"flat" | "side" | "up"} */
 const orient = (q) => (q.p[2] === 2 ? "flat" : q.p[2] === 1 ? "side" : "up");
-/** @param {{p: number[]}[]} P @returns {string} */
+/** @param {{p: number[], count?: number}[]} P Kartons oder Blöcke (count = Kartons im Block) @returns {string} */
 function orientSummary(P) {
   /** @type {Record<string, number>} */ const cnt = { flat: 0, side: 0, up: 0 };
-  P.forEach((p) => cnt[orient(p)]++);
+  P.forEach((p) => { cnt[orient(p)] += p.count || 1; });
   return ["flat", "side", "up"].filter((k) => cnt[k]).map((k) => `${cnt[k]} ${cnt[k] === 1 ? ORIENT[/** @type {"flat"} */ (k)].one : ORIENT[/** @type {"flat"} */ (k)].many}`).join(", ");
 }
 /** @param {Pattern} pat @returns {string} */
@@ -359,40 +557,54 @@ function renderViewer() {
     return;
   }
   const rule = v.rule || patternRule(v.pattern, state.bin);
-  const nmax = state.rulesInfo ? state.rulesInfo.nmax : null;
-  const boxes = patternLayout(v.pattern, v.carton).sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x));
-  v.boxes = boxes;
+  // bei sehr vielen Kartons zeigt die Zeichnung Blöcke gleich gedrehter Kartons statt jeden einzeln
+  const total = patternCount(v.pattern);
+  const blocks = total > DRAW_MAX;
+  /** @type {any[]} */ const boxes = (blocks ? layoutBlocks(v.pattern, v.carton) : patternLayout(v.pattern, v.carton)).sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x));
+  v.boxes = boxes; v.blocks = blocks;
   $("#v-eyebrow").textContent = v.eyebrow;
-  $("#v-title").innerHTML = `${boxes.length} ${boxes.length === 1 ? "Karton" : "Kartons"} <span class="u">à ${dimsText(v.carton)} mm</span>`;
-  $("#v-meta").innerHTML = `<b>${patternKind(v.pattern)}</b> · ${orientSummary(boxes)}`;
+  $("#v-title").innerHTML = `${total} ${total === 1 ? "Karton" : "Kartons"} <span class="u">à ${dimsText(v.carton)} ${U()}</span>`;
+  $("#v-meta").innerHTML = `<b>${patternKind(v.pattern)}</b> · ${orientSummary(boxes)}${blocks ? ` · Zeichnung zeigt ${boxes.length === 1 ? "einen Block" : boxes.length + " Blöcke"} statt einzelner Kartons` : ""}`;
   $("#v-note").hidden = !v.note; $("#v-note").textContent = v.note || "";
-  $("#v-rule").textContent = ruleText(rule.cons, rule.count);
+  $("#v-rule").textContent = ruleText(rule.cons, rule.count, U());
   $("#v-pat").textContent = v.patStr;
   const n = boxes.length;
   const step = state.step == null || state.step > n ? n : state.step;
   const si = /** @type {HTMLInputElement} */ ($("#step"));
   si.max = String(Math.max(1, n)); si.value = String(Math.max(1, step));
   $("#v-stepper").hidden = n < 2;
-  $("#step-out").textContent = `Karton 1 bis ${step} von ${n}${step < n ? ", weitere ausgeblendet" : ""}`;
+  $("#step-out").textContent = stepText(step, n, blocks);
   drawCurrent(step);
   const kinds = [...new Set(boxes.map(orient))];
   $("#v-legend").innerHTML = ["flat", "side", "up"].filter((k) => kinds.includes(/** @type {"flat"} */ (k)))
     .map((k) => `<span><i class="sw o-${k}"></i>${ORIENT[/** @type {"flat"} */ (k)].one}</span>`).join("");
-  $("#v-list").innerHTML = n <= 80 ? boxes.map((p, i) => `<li class="${i >= step ? "later" : ""}"><span class="num">${i + 1}</span><span>${ORIENT[orient(p)].one}</span>
-    <span class="pos">L ${fmt(p.x)}–${fmt(p.x + p.dx)} · B ${fmt(p.y)}–${fmt(p.y + p.dy)} · H ${fmt(p.z)}–${fmt(p.z + p.dz)}</span></li>`).join("") : "";
+  $("#v-list").innerHTML = boxListHtml(boxes, step, blocks);
+}
+/** @param {number} step @param {number} n @param {boolean} blocks @returns {string} */
+function stepText(step, n, blocks) {
+  return `${blocks ? "Block" : "Karton"} 1 bis ${step} von ${n}${step < n ? ", weitere ausgeblendet" : ""}`;
+}
+/**
+ * Liste der Kartons oder Blöcke mit Positionen in der Anzeigeeinheit.
+ * @param {any[]} boxes @param {number} step @param {boolean} blocks @returns {string}
+ */
+function boxListHtml(boxes, step, blocks) {
+  if (boxes.length > 80) return "";
+  return boxes.map((p, i) => `<li class="${i >= step ? "later" : ""}"><span class="num">${i + 1}</span><span>${blocks ? `${p.n.join(" × ")} = ${p.count}, ${ORIENT[orient(p)].many}` : ORIENT[orient(p)].one}</span>
+    <span class="pos">L ${len(p.x)}–${len(p.x + p.dx)} · B ${len(p.y)}–${len(p.y + p.dy)} · H ${len(p.z)}–${len(p.z + p.dz)} ${U()}</span></li>`).join("");
 }
 /** @param {number} step */
 function drawCurrent(step) {
   const v = state.view;
-  const shown = v.boxes.slice(0, step).map((b, i) => ({ ...b, num: i + 1 }));
-  $("#v-svg").innerHTML = drawSVG(state.bin, shown, `${v.boxes.length} Kartons im Bin`);
+  const shown = v.boxes.length > DRAW_MAX ? [] : v.boxes.slice(0, step).map((/** @type {any} */ b, /** @type {number} */ i) => ({ ...b, num: v.blocks ? b.count : i + 1 }));
+  $("#v-svg").innerHTML = drawSVG(state.bin, shown, `${patternCount(v.pattern)} Kartons im Bin`);
 }
 $("#step").addEventListener("input", (e) => {
   const v = state.view;
   if (!v || !v.boxes) return;
   state.step = +(/** @type {HTMLInputElement} */ (e.target)).value;
   const n = v.boxes.length;
-  $("#step-out").textContent = `Karton 1 bis ${state.step} von ${n}${state.step < n ? ", weitere ausgeblendet" : ""}`;
+  $("#step-out").textContent = stepText(state.step, n, !!v.blocks);
   document.querySelectorAll("#v-list li").forEach((li, i) => li.classList.toggle("later", i >= /** @type {number} */ (state.step)));
   drawCurrent(state.step);
 });
@@ -480,7 +692,7 @@ function drawSVG(bin, boxes, label, cone) {
     const left = [[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]];
     s += `<g class="box o-${orient(it)}"><polygon class="r" points="${pts(right)}"/><polygon class="l" points="${pts(left)}"/><polygon class="t" points="${pts(top)}"/>`;
     const w = x1 - x0, d = y1 - y0;
-    if (w > 30 && d > 30) {
+    if (w > 30 && d > 30 && !(it.count > 1)) {
       if (w >= d) { const t = Math.min(d * 0.14, 16), ym = (y0 + y1) / 2; s += `<polygon class="tape" points="${pts([[x0,ym - t/2,z1],[x1,ym - t/2,z1],[x1,ym + t/2,z1],[x0,ym + t/2,z1]])}"/>`; }
       else { const t = Math.min(w * 0.14, 16), xm = (x0 + x1) / 2; s += `<polygon class="tape" points="${pts([[xm - t/2,y0,z1],[xm + t/2,y0,z1],[xm + t/2,y1,z1],[xm - t/2,y1,z1]])}"/>`; }
     }
@@ -496,15 +708,54 @@ function drawSVG(bin, boxes, label, cone) {
   }
   const mL = P(L / 2, W, 0), mW = P(L, W / 2, 0), mH = P(0, W, H / 2);
   const st = `style="font-size:${(fs * 0.95).toFixed(0)}px"`;
-  s += `<text class="lbl" ${st} x="${(mL[0] - fs).toFixed(1)}" y="${(mL[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">L ${numText(L)}${cone ? " · unten " + numText(cone.botL) : ""}</text>`;
-  s += `<text class="lbl" ${st} x="${(mW[0] + fs).toFixed(1)}" y="${(mW[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">B ${numText(W)}${cone ? " · unten " + numText(cone.botW) : ""}</text>`;
-  s += `<text class="lbl" ${st} x="${(mH[0] - fs * 0.7).toFixed(1)}" y="${(mH[1] + fs * 0.35).toFixed(1)}" text-anchor="end">H ${numText(H)}</text>`;
+  s += `<text class="lbl" ${st} x="${(mL[0] - fs).toFixed(1)}" y="${(mL[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">L ${len(L)}${cone ? " · unten " + len(cone.botL) : ""} ${U()}</text>`;
+  s += `<text class="lbl" ${st} x="${(mW[0] + fs).toFixed(1)}" y="${(mW[1] + fs * 1.8).toFixed(1)}" text-anchor="middle">B ${len(W)}${cone ? " · unten " + len(cone.botW) : ""} ${U()}</text>`;
+  s += `<text class="lbl" ${st} x="${(mH[0] - fs * 0.7).toFixed(1)}" y="${(mH[1] + fs * 0.35).toFixed(1)}" text-anchor="end">H ${len(H)} ${U()}</text>`;
   return s + "</svg>";
 }
 
 /* ---------- Regeln erzeugen ---------- */
 let genWorker = /** @type {Worker | null} */ (null);
 let genId = 0;
+/**
+ * Stellt das Raster passend zur Bin-Größe vor: 1 mm bis 2 m, darüber 1 cm.
+ * @param {string} selId Auswahlfeld @param {number} maxDim größtes Bin-Maß in mm
+ */
+function setAutoRes(selId, maxDim) { (/** @type {HTMLSelectElement} */ ($(selId))).value = maxDim > 2000 ? "10" : "1"; }
+/** @returns {{nmax: number, quality: "fast"|"std"|"full", res: number} | null} Einstellungen der Regelerzeugung */
+function genSettings() {
+  const nmax = Math.round(+(/** @type {HTMLInputElement} */ ($("#g-nmax"))).value);
+  if (!(nmax >= 2 && nmax <= 200)) return null;
+  return { nmax, quality: /** @type {"fast"|"std"|"full"} */ ((/** @type {HTMLSelectElement} */ ($("#g-quality"))).value), res: +(/** @type {HTMLSelectElement} */ ($("#g-res"))).value || 1 };
+}
+/**
+ * Schätzt im Hintergrund, wie lange eine Regelerzeugung dauert, und zeigt das Ergebnis an.
+ * @param {object} msg Auftrag an den Worker (type "genest" oder "conegenest")
+ * @param {string} outId Ziel der Anzeige (mit #) @param {{w: Worker | null, t: number, ms: number}} slot merkt Worker, Timer und letzte Schätzung
+ */
+function estimateGen(msg, outId, slot) {
+  clearTimeout(slot.t);
+  if (slot.w) { slot.w.terminate(); slot.w = null; }
+  slot.ms = 0;
+  $(outId).textContent = "Erwartete Dauer wird geschätzt …";
+  slot.t = window.setTimeout(() => {
+    const w = makeWorker((d) => {
+      if (d.type !== "genest") return;
+      w && w.terminate(); slot.w = null;
+      slot.ms = d.ms;
+      $(outId).textContent = `Erwartete Dauer: ${durText(d.ms)} (grobe Schätzung für diesen Rechner, kann um den Faktor 2 abweichen).`;
+    }, () => { slot.w = null; $(outId).textContent = ""; });
+    slot.w = w;
+    if (w) w.postMessage(msg); else $(outId).textContent = "";
+  }, 300);
+}
+const genEst = { w: /** @type {Worker | null} */ (null), t: 0, ms: 0 };
+function requestGenEstimate() {
+  const g = genSettings();
+  if (!g) { $("#g-est").textContent = ""; return; }
+  estimateGen({ type: "genest", cone: false, bin: state.bin, quality: g.quality, nmax: g.nmax, res: g.res }, "#g-est", genEst);
+}
+for (const id of ["#g-nmax", "#g-quality", "#g-res"]) $(id).addEventListener("change", requestGenEstimate);
 function stopGen() {
   if (genWorker) { genWorker.terminate(); genWorker = null; }
   $("#g-progress").hidden = true; $("#g-stop").hidden = true;
@@ -512,34 +763,41 @@ function stopGen() {
 }
 $("#g-stop").addEventListener("click", () => { stopGen(); $("#g-source").textContent = "Berechnung abgebrochen."; if (state.rules.length) loadRulesForBin(); });
 $("#g-start").addEventListener("click", () => {
-  const nmax = Math.round(+(/** @type {HTMLInputElement} */ ($("#g-nmax"))).value);
-  if (!(nmax >= 2 && nmax <= 60)) { $("#g-source").textContent = "Die Höchstanzahl muss zwischen 2 und 60 liegen."; return; }
-  const qk = /** @type {"fast"|"std"|"full"} */ ((/** @type {HTMLSelectElement} */ ($("#g-quality"))).value);
-  const q = QUALITY[qk];
+  const g = genSettings();
+  if (!g) { $("#g-source").textContent = "Die Höchstanzahl muss zwischen 2 und 200 liegen."; return; }
   stopGen();
   genId = ++seq;
-  const opt = genOptions(qk, nmax);
+  // Zeitlimit: mindestens das der Voreinstellung, bei großen Bins das Vierfache der Schätzung
+  const opt = genOptions(g.quality, g.nmax, g.res, Math.max(QUALITY[g.quality].maxMs, 4 * genEst.ms));
   genWorker = makeWorker(onGenMsg, () => { stopGen(); $("#g-source").textContent = "Die Hintergrundberechnung konnte nicht starten. Öffne die Seite über einen Webserver statt als Datei."; });
   if (!genWorker) { $("#g-source").textContent = "Dieser Browser erlaubt keine Hintergrundberechnung. Die Regeln lassen sich hier leider nicht erzeugen."; return; }
-  genWorker.postMessage({ type: "gen", id: genId, bin: state.bin, opt, quality: qk });
+  genWorker.postMessage({ type: "gen", id: genId, bin: state.bin, opt, quality: g.quality });
   $("#g-progress").hidden = false; $("#g-stop").hidden = false;
   (/** @type {HTMLButtonElement} */ ($("#g-start"))).disabled = true;
   $("#g-status").textContent = "Startet …"; $("#g-bar").style.width = "0%";
 });
+/**
+ * Fortschritt einer Regelerzeugung als Anteil und Text.
+ * @param {any} p Meldung des Rechenkerns @param {number} res Raster in mm @returns {{frac: number, text: string}}
+ */
+function genProgress(p, res) {
+  const passes = p.passes || 1;
+  let frac = 0, text = "";
+  if (p.phase === "grid") { frac = ((p.pass - 1) + p.done / p.total) / passes; text = `Raster ${len(p.step)} ${U()}: Linie ${p.done} von ${p.total}`; }
+  else if (p.phase === "random") { frac = ((p.pass - 1) + Math.min(1, p.sinceNew / p.patience)) / passes; text = `Zufällige Linien: ${p.done}, seit der letzten neuen Regel ${p.sinceNew} von ${p.patience}`; }
+  else if (p.phase === "prune") { frac = 0.97; text = `Räume ${p.rules} Kandidaten auf …`; }
+  else if (p.phase === "sweep") { frac = 0.99; text = `Prüfe ${p.rules} Regeln auf dem Raster ${resText(res)} …`; }
+  if (p.maxMs) frac = Math.max(frac, Math.min(0.96, p.elapsed / p.maxMs));
+  return { frac, text: `${text} · ${p.rules} Regeln bisher · ${durText(p.elapsed).replace("etwa ", "")}` };
+}
 /** @param {any} d */
 function onGenMsg(d) {
   if (d.id !== genId) return;
   if (d.type === "progress") {
-    const p = d.p;
-    const passes = p.passes || 1;
-    let frac = 0, text = "";
-    if (p.phase === "grid") { frac = ((p.pass - 1) + p.done / p.total) / passes; text = `Raster ${p.step} mm: Linie ${p.done} von ${p.total}`; }
-    else if (p.phase === "random") { frac = ((p.pass - 1) + Math.min(1, p.sinceNew / p.patience)) / passes; text = `Zufällige Linien: ${p.done}, seit der letzten neuen Regel ${p.sinceNew} von ${p.patience}`; }
-    else if (p.phase === "prune") { frac = 0.97; text = `Räume ${p.rules} Kandidaten auf …`; }
-    else if (p.phase === "sweep") { frac = 0.99; text = `Prüfe ${p.rules} Regeln auf dem 1-mm-Raster …`; }
-    if (p.maxMs) frac = Math.max(frac, Math.min(0.96, p.elapsed / p.maxMs));
-    $("#g-bar").style.width = (frac * 100).toFixed(1) + "%";
-    $("#g-status").textContent = `${text} · ${p.rules} Regeln bisher · ${Math.round(p.elapsed / 1000)} s`;
+    const g = genSettings();
+    const pr = genProgress(d.p, g ? g.res : 1);
+    $("#g-bar").style.width = (pr.frac * 100).toFixed(1) + "%";
+    $("#g-status").textContent = pr.text;
   } else if (d.type === "gen") {
     genWorker && genWorker.terminate(); genWorker = null;
     $("#g-progress").hidden = true; $("#g-stop").hidden = true;
@@ -552,7 +810,7 @@ function onGenMsg(d) {
 }
 /** @returns {RulesData} */
 function exportData() {
-  return { bin: state.bin, nmax: state.rulesInfo.nmax, quality: state.rulesInfo.quality, meta: state.rulesInfo.meta, stats: state.rulesInfo.stats,
+  return { bin: state.bin, nmax: state.rulesInfo.nmax, quality: state.rulesInfo.quality, res: state.rulesInfo.res, meta: state.rulesInfo.meta, stats: state.rulesInfo.stats,
     rules: state.rules.map((r) => /** @type {[number, number, number[], string, string]} */ ([r.score, r.count, r.cons.flatMap((k) => [k.t[0], k.t[1], k.t[2], k.ax]), r.pat, r.src])) };
 }
 
@@ -597,7 +855,7 @@ function renderRuleList() {
       rows.push(`<tr class="grp"><th colspan="4">${cur}${cur === nmax ? " oder mehr" : ""} ${cur === 1 ? "Karton" : "Kartons"}<span>${c} ${c === 1 ? "Regel" : "Regeln"}</span></th></tr>`);
     }
     const kind = r.src === "search" ? `<span class="tag">verschränkt</span> ` : "";
-    rows.push(`<tr class="${hit === r ? "hit" : ""}"><td class="rule">${esc(r.text)}</td><td class="ex">${r.example ? dimsText(r.example) : "–"}</td><td class="pat">${kind}<span title="${esc(r.pat)}">${esc(r.pat)}</span></td><td><button type="button" class="btn small" data-show-rule="${r.id}">Zeigen</button></td></tr>`);
+    rows.push(`<tr class="${hit === r ? "hit" : ""}"><td class="rule">${esc(ruleText(r.cons, r.score, U()))}</td><td class="ex">${r.example ? dimsText(r.example) : "–"}</td><td class="pat">${kind}<span title="${esc(r.pat)}">${esc(r.pat)}</span></td><td><button type="button" class="btn small" data-show-rule="${r.id}">Zeigen</button></td></tr>`);
   }
   $("#r-list").innerHTML = rows.join("");
 }
@@ -606,7 +864,7 @@ $("#r-list").addEventListener("click", (e) => {
   if (b) showRule(+(/** @type {HTMLElement} */ (b)).dataset.showRule);
 });
 /** @param {boolean} withPat @returns {string} */
-function exportText(withPat) { return rulesToText(state.bin, state.rulesInfo.nmax, state.rules, withPat); }
+function exportText(withPat) { return rulesToText(state.bin, state.rulesInfo.nmax, state.rules, withPat, U()); }
 $("#r-copy-all").addEventListener("click", (e) => copyText(exportText(true), /** @type {HTMLElement} */ (e.currentTarget)));
 $("#r-copy-rules").addEventListener("click", (e) => copyText(exportText(false), /** @type {HTMLElement} */ (e.currentTarget)));
 $("#r-download").addEventListener("click", () => {
@@ -644,10 +902,26 @@ function showTab(name) {
 }
 document.querySelectorAll(".tabbar [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(/** @type {HTMLElement} */ (b).dataset.tab || "box")));
 
+document.querySelectorAll(".disp-switch button").forEach((b) => b.addEventListener("click", () => setDisplayUnit(/** @type {Unit} */ ((/** @type {HTMLElement} */ (b)).dataset.disp || "mm"))));
+rerenderHooks.push(() => {
+  renderSource();
+  renderResult();
+  if (state.view) renderViewer();
+  if (state.rules.length) renderRuleList();
+});
+
 (function init() {
   if (location.protocol === "file:") $("#file-note").hidden = false;
+  bindUnitSelect("#bin-unit", ["#bin-l", "#bin-b", "#bin-h"]);
+  bindUnitSelect("#ck-unit", ["#ck-a", "#ck-b", "#ck-c"]);
+  const savedBin = restoreDims("quader-bin", ["#bin-l", "#bin-b", "#bin-h"], "#bin-unit");
+  if (savedBin) state.bin = savedBin;
+  restoreDims("quader-karton", ["#ck-a", "#ck-b", "#ck-c"], "#ck-unit");
+  rerenderAll();
+  setAutoRes("#g-res", Math.max(...state.bin));
   loadRulesForBin();
   startCheck();
+  requestGenEstimate();
   let tab = "";
   try { tab = location.hash === "#konisch" ? "cone" : location.hash === "#quader" ? "box" : (localStorage.getItem("kartonregeln:reiter") || ""); } catch (e) { tab = ""; }
   window.addEventListener("DOMContentLoaded", () => { if (tab === "cone") showTab("cone"); });

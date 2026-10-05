@@ -12,12 +12,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=2026-10-02.4">
+<link rel="stylesheet" href="style.css?v=2026-10-05.1">
 </head>
 <body>
 <div class="wrap">
   <header>
-    <span class="eyebrow">Gleiche Kartons · Maße in mm · jeder Karton darf beliebig gedreht werden</span>
+    <span class="eyebrow">Gleiche Kartons · Maße in mm, cm oder m · jeder Karton darf beliebig gedreht werden</span>
     <h1>Wie viele Kartons passen in den Bin, und nach welchem Muster?</h1>
     <p class="lede">Wähle die Art des Bins und stelle seine Innenmaße ein. Darunter prüfst du einzelne Kartons und lädst gespeicherte Packmuster. In beiden Reitern gibt es außerdem die Regelliste im Format „when … then N“.</p>
   </header>
@@ -33,28 +33,35 @@
   <section class="binbox" aria-labelledby="bin-title">
     <h2 id="bin-title">Bin innen</h2>
     <form class="form" id="bin-form" autocomplete="off">
-      <div class="field"><label for="bin-l">Länge</label><input id="bin-l" type="number" inputmode="decimal" min="1" step="0.1" value="603"></div>
+      <div class="field"><label for="bin-l">Länge</label><input id="bin-l" type="number" inputmode="decimal" min="0" step="0.1" value="603"></div>
       <span class="times">×</span>
-      <div class="field"><label for="bin-b">Breite</label><input id="bin-b" type="number" inputmode="decimal" min="1" step="0.1" value="403"></div>
+      <div class="field"><label for="bin-b">Breite</label><input id="bin-b" type="number" inputmode="decimal" min="0" step="0.1" value="403"></div>
       <span class="times">×</span>
-      <div class="field"><label for="bin-h">Höhe</label><input id="bin-h" type="number" inputmode="decimal" min="1" step="0.1" value="404"></div>
-      <span class="unit">mm</span>
+      <div class="field"><label for="bin-h">Höhe</label><input id="bin-h" type="number" inputmode="decimal" min="0" step="0.1" value="404"></div>
+      <div class="field unitf"><label for="bin-unit">Einheit</label><select id="bin-unit" aria-label="Einheit der Bin-Maße"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></div>
     </form>
     <span class="err" id="bin-err" hidden></span>
   </section>
 
   <section class="panel" aria-labelledby="ck-title">
-    <h2 id="ck-title">Karton prüfen</h2>
+    <div class="p-head">
+      <h2 id="ck-title">Karton prüfen</h2>
+      <div class="disp-switch" role="group" aria-label="Einheit der Anzeige">
+        <span class="lab">Anzeige in</span>
+        <button type="button" data-disp="mm" aria-pressed="true">mm</button><button type="button" data-disp="cm" aria-pressed="false">cm</button><button type="button" data-disp="m" aria-pressed="false">m</button>
+      </div>
+    </div>
     <form class="form" id="ck-form" autocomplete="off">
-      <div class="field"><label for="ck-a">Maß 1</label><input id="ck-a" type="number" inputmode="decimal" min="1" step="0.1" value="360"></div>
+      <div class="field"><label for="ck-a">Maß 1</label><input id="ck-a" type="number" inputmode="decimal" min="0" step="0.1" value="360"></div>
       <span class="times">×</span>
-      <div class="field"><label for="ck-b">Maß 2</label><input id="ck-b" type="number" inputmode="decimal" min="1" step="0.1" value="236"></div>
+      <div class="field"><label for="ck-b">Maß 2</label><input id="ck-b" type="number" inputmode="decimal" min="0" step="0.1" value="236"></div>
       <span class="times">×</span>
-      <div class="field"><label for="ck-c">Maß 3</label><input id="ck-c" type="number" inputmode="decimal" min="1" step="0.1" value="128"></div>
-      <span class="unit">mm, Reihenfolge egal</span>
+      <div class="field"><label for="ck-c">Maß 3</label><input id="ck-c" type="number" inputmode="decimal" min="0" step="0.1" value="128"></div>
+      <div class="field unitf"><label for="ck-unit">Einheit</label><select id="ck-unit" aria-label="Einheit der Kartonmaße"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></div>
+      <span class="unit">Reihenfolge egal</span>
     </form>
     <div class="result" id="ck-result" aria-live="polite"></div>
-    <p class="note">Sofort erscheint die schnelle Rechnung mit Blockmustern. „Genau rechnen“ sucht einige Sekunden nach verschränkten Mustern und prüft, ob mehr Kartons passen.</p>
+    <p class="note">Sofort erscheint eine schnelle, ungefähre Rechnung; sie ist als „ungefähr“ gekennzeichnet und nennt, wie viele Kartons höchstens möglich wären. Für mehr Genauigkeit wählst du eine Stufe und startest „Genau rechnen“. Neben jeder Stufe steht die erwartete Dauer.</p>
     <div class="loadrow">
       <div class="field" style="min-width:0">
         <label for="load-in">Gespeichertes Muster laden</label>
@@ -83,7 +90,7 @@
       <div class="svgbox" id="v-svg"></div>
       <div class="side">
         <div class="legend" id="v-legend"></div>
-        <div class="axis">L = Bin-Länge · B = Bin-Breite · H = Höhe · l ≥ w ≥ h sind die Kartonkanten</div>
+        <div class="axis">L = Bin-Länge · B = Bin-Breite · H = Höhe · l ≥ w ≥ h sind die Kartonkanten · Maße in <span class="disp-unit">mm</span></div>
         <div class="stepper" id="v-stepper">
           <label for="step">Packreihenfolge</label>
           <input id="step" type="range" min="1" max="1" value="1">
@@ -96,19 +103,26 @@
 
   <section class="panel" id="rules" aria-labelledby="r-title">
     <h2 id="r-title">Regeln für diesen Bin</h2>
-    <p>Jede Regel beschreibt, wann ein bestimmtes Packmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Liste deckt alle Kartons in ganzen Millimetern ab.</p>
+    <p>Jede Regel beschreibt, wann ein bestimmtes Packmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Liste deckt alle Kartons auf dem gewählten Raster ab: in ganzen Millimetern oder in ganzen Zentimetern. Das Zentimeter-Raster rechnet bei großen Bins deutlich schneller; für Kartons mit krummen Maßen gilt dann die Regel des nächstgrößeren Kartons in ganzen Zentimetern.</p>
     <div class="gen-row">
-      <div class="field"><label for="g-nmax">Höchstanzahl</label><input id="g-nmax" type="number" min="2" max="60" step="1" value="30"></div>
+      <div class="field"><label for="g-nmax">Höchstanzahl</label><input id="g-nmax" type="number" min="2" max="200" step="1" value="30"></div>
+      <div class="field"><label for="g-res">Raster der Kartonmaße</label>
+        <select id="g-res">
+          <option value="1">1 mm</option>
+          <option value="10">1 cm</option>
+        </select>
+      </div>
       <div class="field"><label for="g-quality">Genauigkeit</label>
         <select id="g-quality">
-          <option value="fast">Schnell, etwa 1 Minute</option>
-          <option value="std" selected>Standard, etwa 3 Minuten</option>
-          <option value="full">Gründlich, 10 bis 20 Minuten</option>
+          <option value="fast">Schnell</option>
+          <option value="std" selected>Standard</option>
+          <option value="full">Gründlich</option>
         </select>
       </div>
       <button type="button" class="btn primary" id="g-start">Regeln berechnen</button>
       <button type="button" class="btn" id="g-stop" hidden>Abbrechen</button>
     </div>
+    <div class="note" id="g-est"></div>
     <div class="progress" id="g-progress" hidden>
       <div class="bar"><i id="g-bar"></i></div>
       <div class="note" id="g-status"></div>
@@ -144,6 +158,7 @@
       <li><b>Abtasten entlang von Linien.</b> Der Rechner hält zwei Kanten fest und lässt die dritte laufen. Überall, wo laut Regelliste die Anzahl sinkt, prüft er mit dem Löser, ob dort nicht doch mehr passen. Findet er ein besseres Muster, schiebt er den Karton so weit hinaus, wie das Muster noch trägt, und nimmt es als neue Regel auf. Erst auf festen Rastern, dann auf zufälligen Linien, bis lange nichts Neues mehr kommt.</li>
       <li><b>Drei Arten von Mustern.</b> Blockmuster teilen den Bin in Blöcke aus gleich gedrehten Kartons. Lagenmuster wiederholen eine zweidimensional verschränkte Lage, etwa eine Windmühle. Freie Muster sind beliebig verschränkt und werden mit einer Suche gefunden.</li>
       <li><b>Aufräumen.</b> Regeln, deren Bereich ganz in einer anderen Regel mit mindestens gleicher Anzahl liegt, fallen weg. Übrig bleiben nur Regeln, die für mindestens einen Karton in ganzen Millimetern den Ausschlag geben.</li>
+      <li><b>Raster und große Bins.</b> Das Raster legt fest, für welche Kartons die Liste vollständig sein soll: alle in ganzen Millimetern oder alle in ganzen Zentimetern. Die Regeln selbst gelten für jeden Karton. Bei Bins über 2 m ist das Zentimeter-Raster vorgewählt, weil das Millimeter-Raster dort sehr lange rechnet. Die Höchstanzahl begrenzt, bis zu welcher Anzahl die Liste unterscheidet; in einem großen Bin sagt sie für kleine Kartons nur „30 oder mehr“. Vor dem Start steht unter den Feldern, wie lange die Rechnung voraussichtlich dauert.</li>
       <li><b>Verlässlichkeit.</b> Jede Regel ist durch ihr Muster belegt, eine Regel zeigt also nie zu viel. Die Liste kann an einzelnen Stellen zu wenig zeigen, wenn es ein Muster gibt, das der Rechner nicht gefunden hat. „Karton prüfen“ sucht für einen einzelnen Karton gründlicher und kann das Muster dann als Regel übernehmen.</li>
     </ul>
     <h2>Textform der Muster</h2>
@@ -152,6 +167,7 @@
       <li><code>X(…,…)</code> legt Teile entlang der Bin-Länge hintereinander, <code>Y(…)</code> entlang der Breite, <code>Z(…)</code> übereinander. Gruppen lassen sich schachteln, etwa <code>X(1x1x1:hlw,2x1x2:wlh)</code>.</li>
       <li><code>B(hlw; wlh x1; lhw x1 z2)</code> ist eine Kartonliste für verschränkte Muster. Jeder Eintrag nennt die Lage und optional Vorgänger: <code>x1</code> heißt „entlang der Länge hinter Karton 1“, <code>z2</code> „auf Karton 2“. Die Position ergibt sich jeweils aus dem weitesten Vorgänger.</li>
       <li>Zum Laden kannst du das Muster allein oder die ganze Zeile „when … then N | Muster“ einfügen. Das Muster ist unabhängig von den Maßen: Beim Laden rechnet die Seite die Regel für den eingestellten Bin neu aus.</li>
+      <li>Die Zahlen in den Regeln stehen in der Einheit der Anzeige (mm, cm oder m). Kartonmaße müssen in derselben Einheit eingesetzt werden. Die gespeicherte Textdatei nennt die Einheit in der Kopfzeile.</li>
     </ul>
   </section>
   </div>
@@ -164,25 +180,25 @@
         <fieldset>
           <legend>Öffnung mit geradem Rand</legend>
           <div class="form">
-            <div class="field"><label for="cb-topL">Länge</label><input id="cb-topL" type="number" inputmode="decimal" min="1" step="0.1" value="558"></div>
+            <div class="field"><label for="cb-topL">Länge</label><input id="cb-topL" type="number" inputmode="decimal" min="0" step="0.1" value="558"></div>
             <span class="times">×</span>
-            <div class="field"><label for="cb-topW">Breite</label><input id="cb-topW" type="number" inputmode="decimal" min="1" step="0.1" value="374"></div>
+            <div class="field"><label for="cb-topW">Breite</label><input id="cb-topW" type="number" inputmode="decimal" min="0" step="0.1" value="374"></div>
             <div class="field"><label for="cb-rimH">Randhöhe</label><input id="cb-rimH" type="number" inputmode="decimal" min="0" step="0.1" value="65"></div>
           </div>
         </fieldset>
         <fieldset>
           <legend>Boden</legend>
           <div class="form">
-            <div class="field"><label for="cb-botL">Länge</label><input id="cb-botL" type="number" inputmode="decimal" min="1" step="0.1" value="515"></div>
+            <div class="field"><label for="cb-botL">Länge</label><input id="cb-botL" type="number" inputmode="decimal" min="0" step="0.1" value="515"></div>
             <span class="times">×</span>
-            <div class="field"><label for="cb-botW">Breite</label><input id="cb-botW" type="number" inputmode="decimal" min="1" step="0.1" value="336"></div>
+            <div class="field"><label for="cb-botW">Breite</label><input id="cb-botW" type="number" inputmode="decimal" min="0" step="0.1" value="336"></div>
           </div>
         </fieldset>
         <fieldset>
           <legend>Konischer Teil</legend>
           <div class="form">
             <div class="field"><label for="cb-coneH">Höhe</label><input id="cb-coneH" type="number" inputmode="decimal" min="0" step="0.1" value="344"></div>
-            <span class="unit">mm</span>
+            <div class="field unitf"><label for="cb-unit">Einheit</label><select id="cb-unit" aria-label="Einheit der Bin-Maße"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></div>
           </div>
         </fieldset>
         <button type="button" class="btn small" id="cb-reset">Zurücksetzen auf Zeichnung</button>
@@ -193,17 +209,24 @@
   </section>
 
   <section class="panel" aria-labelledby="cc-title">
-    <h2 id="cc-title">Karton prüfen</h2>
+    <div class="p-head">
+      <h2 id="cc-title">Karton prüfen</h2>
+      <div class="disp-switch" role="group" aria-label="Einheit der Anzeige">
+        <span class="lab">Anzeige in</span>
+        <button type="button" data-disp="mm" aria-pressed="true">mm</button><button type="button" data-disp="cm" aria-pressed="false">cm</button><button type="button" data-disp="m" aria-pressed="false">m</button>
+      </div>
+    </div>
     <form class="form" id="cc-form" autocomplete="off">
-      <div class="field"><label for="cc-a">Maß 1</label><input id="cc-a" type="number" inputmode="decimal" min="1" step="0.1" value="360"></div>
+      <div class="field"><label for="cc-a">Maß 1</label><input id="cc-a" type="number" inputmode="decimal" min="0" step="0.1" value="360"></div>
       <span class="times">×</span>
-      <div class="field"><label for="cc-b">Maß 2</label><input id="cc-b" type="number" inputmode="decimal" min="1" step="0.1" value="236"></div>
+      <div class="field"><label for="cc-b">Maß 2</label><input id="cc-b" type="number" inputmode="decimal" min="0" step="0.1" value="236"></div>
       <span class="times">×</span>
-      <div class="field"><label for="cc-c">Maß 3</label><input id="cc-c" type="number" inputmode="decimal" min="1" step="0.1" value="128"></div>
-      <span class="unit">mm, Reihenfolge egal</span>
+      <div class="field"><label for="cc-c">Maß 3</label><input id="cc-c" type="number" inputmode="decimal" min="0" step="0.1" value="128"></div>
+      <div class="field unitf"><label for="cc-unit">Einheit</label><select id="cc-unit" aria-label="Einheit der Kartonmaße"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></div>
+      <span class="unit">Reihenfolge egal</span>
     </form>
     <div class="result" id="cc-result" aria-live="polite"></div>
-    <p class="note">Sofort erscheint die schnelle Rechnung mit Lagen aus Blockmustern. „Genau rechnen“ sucht einige Sekunden nach besseren Mustern.</p>
+    <p class="note">Sofort erscheint eine schnelle, ungefähre Rechnung; sie ist als „ungefähr“ gekennzeichnet und nennt, wie viele Kartons höchstens möglich wären. Für mehr Genauigkeit wählst du eine Stufe und startest „Genau rechnen“. Neben jeder Stufe steht die erwartete Dauer.</p>
     <div class="loadrow">
       <div class="field" style="min-width:0">
         <label for="cc-load-in">Gespeichertes Muster laden</label>
@@ -232,7 +255,7 @@
       <div class="svgbox" id="cv-svg"></div>
       <div class="side">
         <div class="legend" id="cv-legend"></div>
-        <div class="axis">L und B ab der Ecke der oberen Öffnung, H ab dem Boden · l ≥ w ≥ h sind die Kartonkanten</div>
+        <div class="axis">L und B ab der Ecke der oberen Öffnung, H ab dem Boden · l ≥ w ≥ h sind die Kartonkanten · Maße in <span class="disp-unit">mm</span></div>
         <div class="stepper" id="cv-stepper">
           <label for="cv-step">Packreihenfolge</label>
           <input id="cv-step" type="range" min="1" max="1" value="1">
@@ -247,17 +270,24 @@
     <h2 id="cr-title">Regeln für diesen Bin</h2>
     <p>Jede Regel beschreibt, wann ein bestimmtes Lagenmuster passt. Die Kartonkanten heißen <b>l ≥ w ≥ h</b> (längste, mittlere, kürzeste). Für einen Karton gilt die höchste Anzahl unter allen Regeln, deren Bedingungen er erfüllt. Die Regeln gelten nur für die oben eingestellten Bin-Maße. Änderst du ein Maß, braucht der Bin eine neue Liste.</p>
     <div class="gen-row">
-      <div class="field"><label for="cg-nmax">Höchstanzahl</label><input id="cg-nmax" type="number" min="2" max="60" step="1" value="30"></div>
+      <div class="field"><label for="cg-nmax">Höchstanzahl</label><input id="cg-nmax" type="number" min="2" max="200" step="1" value="30"></div>
+      <div class="field"><label for="cg-res">Raster der Kartonmaße</label>
+        <select id="cg-res">
+          <option value="1">1 mm</option>
+          <option value="10">1 cm</option>
+        </select>
+      </div>
       <div class="field"><label for="cg-quality">Genauigkeit</label>
         <select id="cg-quality">
-          <option value="fast">Schnell, etwa 1 Minute</option>
-          <option value="std" selected>Standard, etwa 3 Minuten</option>
-          <option value="full">Gründlich, etwa 5 Minuten</option>
+          <option value="fast">Schnell</option>
+          <option value="std" selected>Standard</option>
+          <option value="full">Gründlich</option>
         </select>
       </div>
       <button type="button" class="btn primary" id="cg-start">Regeln berechnen</button>
       <button type="button" class="btn" id="cg-stop" hidden>Abbrechen</button>
     </div>
+    <div class="note" id="cg-est"></div>
     <div class="progress" id="cg-progress" hidden>
       <div class="bar"><i id="cg-bar"></i></div>
       <div class="note" id="cg-status"></div>
@@ -291,6 +321,7 @@
       <li><b>Wand.</b> Eine Lage, deren Unterkante in der Höhe z liegt, darf so lang sein wie der Bin dort: Bodenlänge plus Steigung mal z. Die Höhe z ist die Summe der Lagen darunter. So entstehen Bedingungen wie <code>3*w&lt;=515+0.125*h</code>: Drei Kartons mit w nebeneinander passen, wenn die Lage auf einer Lage der Höhe h steht. Reicht eine Lage in den geraden Rand, kommt die Bedingung mit dem Maß der Öffnung dazu, etwa <code>3*w&lt;=558</code>.</li>
       <li><b>Höhe.</b> Die Summe aller Lagenhöhen bleibt unter der Gesamthöhe, zum Beispiel <code>l+h&lt;=409</code>.</li>
       <li><b>Auflage.</b> Jeder Karton einer oberen Lage liegt mindestens 1 mm auf einem Karton darunter. Daraus werden Bedingungen wie <code>0.5*w+1&lt;=l</code>. Der Faktor 0.5 kommt daher, dass die Lagen mittig liegen.</li>
+      <li><b>Einheit.</b> Die festen Längen in den Regeln stehen in der Einheit der Anzeige, die Faktoren vor l, w und h haben keine Einheit. In cm wird aus <code>h+1&lt;=0.5*l</code> also <code>h+0.1&lt;=0.5*l</code>. Mustertexte nennen ihren Karton immer in mm.</li>
       <li><b>Gerundete Zahlen.</b> In der Textform stehen höchstens vier Nachkommastellen. Gerundet wird immer so, dass die Bedingung dadurch strenger wird, nie lockerer.</li>
       <li><b>Entstehung.</b> Wie im Reiter „Quader-Bin“: Start mit einfachen Gittern am Boden, dann Abtasten entlang von Linien. An jeder Stelle, an der die Anzahl laut Liste sinkt, sucht der Rechner das beste Lagenmuster und nimmt es als Regel auf.</li>
       <li><b>Verlässlichkeit.</b> Jede Regel ist durch ihr Muster belegt, sie zeigt also nie zu viel. Die Liste kennt nur Lagenmuster. „Karton prüfen“ findet mit verschränkten Lagen und der freien Suche gelegentlich einen Karton mehr. Ist das gefundene Muster ein Lagenmuster, lässt es sich per Klick als Regel übernehmen.</li>
@@ -303,8 +334,8 @@
       <li><b>Form.</b> Unten ist der Bin so groß wie der Boden, bis zur Höhe des konischen Teils wird er gleichmäßig weiter, darüber bleibt er so groß wie die Öffnung. Die Wände sind auf gegenüberliegenden Seiten gleich geneigt. Alle sechs Maße sind Eingabefelder und werden in diesem Browser gespeichert.</li>
       <li><b>Was ein gültiges Muster ist.</b> Kartons stehen gerade, nicht gekippt. Die Grundfläche eines Kartons muss in den Querschnitt auf Höhe seiner Unterkante passen. Jeder Karton liegt auf dem Boden oder auf einem anderen Karton auf, mindestens 1 mm in beiden Richtungen. Wie viel Auflage der am schlechtesten gestützte Karton hat, steht beim Ergebnis.</li>
       <li><b>Lagen.</b> Der Rechner teilt den Bin waagerecht in Lagen. Jede Lage ist ein Quader mit dem Querschnitt an ihrer Unterkante und wird wie im Reiter „Quader-Bin“ gepackt, auch gemischt und verschränkt. Obere Lagen sind breiter und fassen deshalb oft mehr Kartons. Eine Rechnung über alle möglichen Höhen wählt die beste Folge von Lagen, bei der jeder Karton aufliegt.</li>
-      <li><b>Schnell und genau.</b> Sofort erscheint die schnelle Rechnung: Lagen aus Blockmustern. „Genau rechnen“ sucht einige Sekunden weiter, erst nach verschränkten Lagen, dann frei im Konus nach Mustern, die sich nicht in Lagen zerlegen lassen.</li>
-      <li><b>Wie sicher das Ergebnis ist.</b> „Optimal“ heißt: Eine rechnerische Obergrenze ist erreicht. „Vollständig durchsucht“ heißt: Die freie Suche hat alle Anordnungen durchprobiert, bei denen Kartons bündig an Wänden oder aneinander liegen, und keinen Platz für einen weiteren gefunden. „Offen“ heißt: Auch die genaue Rechnung konnte einen Karton mehr nicht ausschließen.</li>
+      <li><b>Schnell und genau.</b> Sofort erscheint die schnelle Rechnung: Lagen aus Blockmustern, bei sehr vielen Kartons mit weniger Schnittpositionen („vereinfacht gerechnet“). „Genau rechnen“ gibt es in drei Stufen mit geschätzter Dauer. Es rechnet die Lagenmuster mit mehr Aufwand und sucht, solange höchstens 800 Kartons in den Bin passen, nach verschränkten Lagen und frei im Konus nach Mustern, die sich nicht in Lagen zerlegen lassen.</li>
+      <li><b>Wie sicher das Ergebnis ist.</b> „Ungefähr“ heißt: schnelle oder vereinfachte Rechnung, daneben steht, wie viele Kartons höchstens möglich wären. „Optimal“ heißt: Eine rechnerische Obergrenze ist erreicht. „Vollständig durchsucht“ heißt: Die freie Suche hat alle Anordnungen durchprobiert, bei denen Kartons bündig an Wänden oder aneinander liegen, und keinen Platz für einen weiteren gefunden. „Offen“ heißt: Auch die genaue Rechnung konnte einen Karton mehr nicht ausschließen.</li>
     </ul>
     <h2>Textform der Muster</h2>
     <ul>
@@ -320,10 +351,10 @@
 <textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
 
 <!-- Nach jeder Änderung an CSS oder JavaScript die Kennung v=… überall in dieser Datei erhöhen, sonst zeigen Browser alte Dateien aus dem Zwischenspeicher. -->
-<script src="packcore.js?v=2026-10-02.4"></script>
-<script src="cone.js?v=2026-10-02.4"></script>
-<script src="cone-rules.js?v=2026-10-02.4"></script>
-<script src="app.js?v=2026-10-02.4"></script>
-<script src="cone-app.js?v=2026-10-02.4"></script>
+<script src="packcore.js?v=2026-10-05.1"></script>
+<script src="cone.js?v=2026-10-05.1"></script>
+<script src="cone-rules.js?v=2026-10-05.1"></script>
+<script src="app.js?v=2026-10-05.1"></script>
+<script src="cone-app.js?v=2026-10-05.1"></script>
 </body>
 </html>

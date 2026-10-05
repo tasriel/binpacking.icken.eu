@@ -201,6 +201,44 @@ function layoutDag(boxes, c) {
   return boxes.map((b, i) => ({ x: pos[i][0], y: pos[i][1], z: pos[i][2], dx: d[i][0], dy: d[i][1], dz: d[i][2], p: b.p }));
 }
 
+/**
+ * Wie patternLayout, aber jeder Block gleich gedrehter Kartons ist ein einziger Quader
+ * (count = Kartons darin, n = Kartons je Achse). Für Muster mit sehr vielen Kartons.
+ * @param {Pattern} pat @param {number[]} c sortierter Karton
+ * @returns {(Placement & {count: number, n: number[]})[]}
+ */
+function layoutBlocks(pat, c) {
+  if (pat.kind !== "T") return layoutDag(pat.boxes, c).map((q) => ({ ...q, count: 1, n: [1, 1, 1] }));
+  /** @type {(Placement & {count: number, n: number[]})[]} */ const out = [];
+  /** @param {TreeNode} nd @param {number[]} o @returns {number[]} */
+  const place = (nd, o) => {
+    if (nd.k === "B") {
+      const size = [0, 0, 0];
+      for (const q of layoutDag(nd.boxes, c)) {
+        out.push({ ...q, x: q.x + o[0], y: q.y + o[1], z: q.z + o[2], count: 1, n: [1, 1, 1] });
+        size[0] = Math.max(size[0], q.x + q.dx); size[1] = Math.max(size[1], q.y + q.dy); size[2] = Math.max(size[2], q.z + q.dz);
+      }
+      return size;
+    }
+    if (nd.k === "G") {
+      const d = [nd.n[0] * c[nd.p[0]], nd.n[1] * c[nd.p[1]], nd.n[2] * c[nd.p[2]]];
+      out.push({ x: o[0], y: o[1], z: o[2], dx: d[0], dy: d[1], dz: d[2], p: nd.p, count: nd.n[0] * nd.n[1] * nd.n[2], n: nd.n });
+      return d;
+    }
+    const size = [0, 0, 0];
+    const pos = [...o];
+    for (const kid of nd.c) {
+      const s = place(kid, pos);
+      pos[nd.a] += s[nd.a];
+      size[nd.a] += s[nd.a];
+      for (let a = 0; a < 3; a++) if (a !== nd.a) size[a] = Math.max(size[a], s[a]);
+    }
+    return size;
+  };
+  place(pat.root, [0, 0, 0]);
+  return out;
+}
+
 /** @param {Pattern} pat @param {number[]} c sortierter Karton @returns {Placement[]} */
 function patternLayout(pat, c) { return pat.kind === "T" ? layoutTree(pat.root, c) : layoutDag(pat.boxes, c); }
 
@@ -311,16 +349,30 @@ function termText(t) {
   return parts.join("+");
 }
 
-/** @param {number} v @returns {string} */
-function numText(v) {
-  return Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : String(Math.round(v * 1000) / 1000);
+/** @param {number} v @param {number} [digits] Nachkommastellen höchstens (Voreinstellung 3) @returns {string} */
+function numText(v, digits = 3) {
+  const f = Math.pow(10, digits);
+  return Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : String(Math.round(v * f) / f);
 }
 
-/** @param {Con[]} cons @returns {string} */
-function consText(cons) { return cons.map((k) => termText(k.t) + "<=" + numText(k.D)).join(" and "); }
+/** Einheiten für Ein- und Ausgabe: mm je Einheit. Gerechnet wird immer in mm. */
+/** @type {Record<string, number>} */
+const UNIT_MM = { mm: 1, cm: 10, m: 1000 };
 
-/** @param {Con[]} cons @param {number} n @returns {string} */
-function ruleText(cons, n) { return "when " + consText(cons) + " then " + n; }
+/**
+ * Länge in der Einheit unit als Zahl für Regeltexte (Dezimalpunkt, auf 0,1 mm genau).
+ * @param {number} mm @param {string} [unit] "mm", "cm" oder "m" @returns {string}
+ */
+function lenText(mm, unit = "mm") {
+  const f = UNIT_MM[unit] || 1;
+  return numText(mm / f, f === 1 ? 3 : f === 10 ? 4 : 6);
+}
+
+/** @param {Con[]} cons @param {string} [unit] Einheit der Maße @returns {string} */
+function consText(cons, unit) { return cons.map((k) => termText(k.t) + "<=" + lenText(k.D, unit)).join(" and "); }
+
+/** @param {Con[]} cons @param {number} n @param {string} [unit] Einheit der Maße @returns {string} */
+function ruleText(cons, n, unit) { return "when " + consText(cons, unit) + " then " + n; }
 
 /** @param {Con[]} cons @returns {string} */
 function consKey(cons) { return cons.map((k) => k.t.join(".") + "@" + k.ax).sort().join("|"); }
@@ -488,7 +540,7 @@ function parsePattern(input) {
   };
   const root = node();
   if (i !== t.length) fail(`Unerwartetes Zeichen „${t[i]}“`);
-  if (treeCount(root) > 5000) throw new Error("Das Muster hat mehr als 5000 Kartons.");
+  if (!(treeCount(root) <= 1e9)) throw new Error("Das Muster hat mehr als eine Milliarde Kartons.");
   return { kind: "T", root };
 }
 
@@ -506,19 +558,71 @@ function parsePerm(s, where) {
  * ========================================================================= */
 
 const DP_WORK_LIMIT = 4e7;
+/** Aufwand, den die schnelle Rechnung für Blockmuster höchstens treibt (etwa 0,1 bis 0,3 s) */
+const DP_QUICK_WORK = 4e7;
+/** So viele Teilquader hält die Blockmuster-Rechnung höchstens im Speicher (13 Byte je Teilquader) */
+const DP_MAX_CELLS = 2e7;
 
-/** @param {number} D @param {number[]} dims @returns {{vals: number[], prevIdx: Int32Array}} */
-function normalSet(D, dims) {
+/**
+ * Mögliche Schnittpositionen entlang einer Achse: alle Summen von Kartonkanten bis D.
+ * Mit maxCount werden höchstens so viele behalten (ausgedünnt). Jede Teilmenge liefert
+ * weiterhin gültige Muster, nur nicht mehr unbedingt das beste. Behalten werden die
+ * größten Vielfachen jeder Kante unter D und unter den Ankern, dann gleichmäßig verteilt
+ * Vielfache einzelner Kanten, deren Gegenstücke vom Rand her und weitere Summen.
+ * @param {number} D @param {number[]} dims @param {number} [maxCount]
+ * @param {number[]} [anchors] weitere Längen, für die später nachgeschlagen wird (konischer Bin: Querschnitte)
+ * @returns {{vals: number[], prevIdx: Int32Array, total: number}} total = Anzahl ohne Ausdünnen
+ */
+function normalSet(D, dims, maxCount, anchors) {
   const reach = new Uint8Array(D + 1);
   reach[0] = 1;
+  let total = 0;
   for (let v = 0; v <= D; v++) {
     if (!reach[v]) continue;
+    total++;
     for (const d of dims) if (v + d <= D) reach[v + d] = 1;
+  }
+  if (maxCount !== undefined && total > maxCount) {
+    const keep = new Uint8Array(D + 1);
+    const below = new Int32Array(D + 1);
+    for (let v = 0, last = 0; v <= D; v++) { if (reach[v]) last = v; below[v] = last; }
+    let n = 0;
+    const cap = Math.max(6, maxCount);
+    /** @param {number} v @param {number} limit */
+    const add = (v, limit) => { if (n < limit && v >= 0 && !keep[v]) { keep[v] = 1; n++; } };
+    add(0, cap);
+    for (const A of [D, ...(anchors || [])]) {
+      if (A < 0 || A > D) continue;
+      add(below[A], cap);
+      for (const d of dims) add(Math.floor(A / d) * d, cap);
+    }
+    // je ein Viertel für Vielfache und für Gegenstücke, gleichmäßig über die Länge verteilt
+    const share = Math.max(1, Math.floor(cap / 4 / dims.length));
+    const lim1 = n + Math.floor(cap / 4), lim2 = lim1 + Math.floor(cap / 4);
+    for (const d of dims) {
+      const kmax = Math.floor(D / d), step = Math.max(1, Math.ceil(kmax / share));
+      for (let k = step; k <= kmax; k += step) add(k * d, lim1);
+    }
+    for (const d of dims) {
+      const kmax = Math.floor(D / d), step = Math.max(1, Math.ceil(kmax / share));
+      for (let k = step; k <= kmax; k += step) add(below[D - k * d], lim2);
+    }
+    const left = cap - n;
+    if (left > 0) {
+      const stride = total / left;
+      let next = stride / 2, i = 0;
+      for (let v = 0; v <= D && n < cap; v++) {
+        if (!reach[v]) continue;
+        if (i >= next) { add(v, cap); next += stride; }
+        i++;
+      }
+    }
+    for (let v = 0; v <= D; v++) reach[v] = keep[v];
   }
   /** @type {number[]} */ const vals = [];
   const prevIdx = new Int32Array(D + 1);
   for (let v = 0; v <= D; v++) { if (reach[v]) vals.push(v); prevIdx[v] = vals.length - 1; }
-  return { vals, prevIdx };
+  return { vals, prevIdx, total };
 }
 
 /**
@@ -556,19 +660,58 @@ function simplifyTree(nd) {
  * @typedef {{count: number, tree: TreeNode | null, heights: number[],
  *   at: (iz: number) => {count: number, tree: TreeNode | null},
  *   cellCount: (X: number, Y: number, Z: number) => number,
- *   cellTree: (X: number, Y: number, Z: number) => TreeNode | null}} DpTable
+ *   cellTree: (X: number, Y: number, Z: number) => TreeNode | null,
+ *   thinned: boolean, work: number, fullWork: number, fullCells: number}} DpTable
+ *   thinned: Schnittpositionen wurden ausgedünnt, das Ergebnis ist dann nur ungefähr.
+ *   work / fullWork: Aufwand dieser Rechnung und der vollständigen; fullCells: Teilquader der vollständigen.
+ * @typedef {{work: number, cells?: number}} DpBudget  Obergrenzen für Aufwand und Speicher
  */
+
+/** @param {number[]} n Schnittpositionen je Achse @returns {number} Aufwand der Blockmuster-Rechnung */
+function dpWorkOf(n) { return n[0] * n[1] * n[2] * (n[0] + n[1] + n[2]) / 2; }
+
+/**
+ * Wie viele Schnittpositionen je Achse bleiben, damit Aufwand und Speicher ins Budget passen:
+ * die jeweils längste Achse wird ausgedünnt.
+ * @param {number[]} full Schnittpositionen je Achse ohne Ausdünnen @param {DpBudget} budget @returns {number[]}
+ */
+function dpCaps(full, budget) {
+  const cap = [...full];
+  const maxCells = budget.cells || DP_MAX_CELLS;
+  while ((dpWorkOf(cap) > budget.work || cap[0] * cap[1] * cap[2] > maxCells) && Math.max(...cap) > 6) {
+    const i = cap.indexOf(Math.max(...cap));
+    cap[i] = Math.max(6, Math.floor(cap[i] * 0.88));
+  }
+  return cap;
+}
+
+/**
+ * Aufwand, den die Blockmuster-Rechnung für diesen Karton bei gegebenem Budget treiben würde.
+ * Damit schätzt die Seite die Dauer von „Genau rechnen“, ohne zu rechnen.
+ * @param {number[]} cartonMM @param {number[]} binMM @param {number} dpWork
+ * @returns {{work: number, full: boolean}} full: reicht für die vollständige Rechnung
+ */
+function planDpWork(cartonMM, binMM, dpWork) {
+  const integral = [...cartonMM, ...binMM].every((v) => Math.abs(v - Math.round(v)) < 1e-9);
+  const base = integral ? 1 : 0.1;
+  const cb = cartonMM.map((v) => Math.max(1, Math.ceil(v / base - 1e-9))), Bb = binMM.map((v) => Math.floor(v / base + 1e-9));
+  const dims = [...new Set(cb)];
+  const full = Bb.map((D) => normalSet(D, dims).total);
+  const cap = dpCaps(full, { work: dpWork, cells: DP_MAX_CELLS });
+  return { work: dpWorkOf(cap), full: cap.every((v, i) => v >= full[i]) };
+}
 
 /**
  * Bestes Blockmuster (Schnitte durch den ganzen Block, rekursiv).
  * @param {number[]} c Karton, ganzzahlig, Reihenfolge = Kantenindex
  * @param {number[]} B Bin, ganzzahlig
  * @param {boolean} force auch bei großem Aufwand rechnen
- * @returns {{count: number, tree: TreeNode | null} | null}
+ * @param {DpBudget} [budget] statt abzubrechen die Schnittpositionen ausdünnen, bis der Aufwand passt
+ * @returns {{count: number, tree: TreeNode | null, thinned: boolean, work: number, fullWork: number, fullCells: number} | null}
  */
-function dpSolve(c, B, force) {
-  const t = dpTable(c, B, force);
-  return t ? { count: t.count, tree: t.tree } : null;
+function dpSolve(c, B, force, budget) {
+  const t = dpTable(c, B, force, undefined, budget);
+  return t ? { count: t.count, tree: t.tree, thinned: t.thinned, work: t.work, fullWork: t.fullWork, fullCells: t.fullCells } : null;
 }
 
 /**
@@ -576,9 +719,10 @@ function dpSolve(c, B, force) {
  * heights[iz] bei voller Länge und Breite. Das braucht der konische Bin.
  * @param {number[]} c @param {number[]} B @param {boolean} force
  * @param {number} [vertical] nur Kartons zulassen, deren senkrechte Kante so lang ist
+ * @param {DpBudget} [budget] statt abzubrechen die Schnittpositionen ausdünnen, bis der Aufwand passt
  * @returns {DpTable | null}
  */
-function dpTable(c, B, force, vertical) {
+function dpTable(c, B, force, vertical, budget) {
   /** @type {{d: number[], p: number[]}[]} */ const ors = [];
   /** @type {Set<string>} */ const seen = new Set();
   for (const p of PERMS) {
@@ -590,13 +734,25 @@ function dpTable(c, B, force, vertical) {
     seen.add(key);
     ors.push({ d, p });
   }
-  if (!ors.length) return { count: 0, tree: null, heights: [0], at: () => ({ count: 0, tree: null }), cellCount: () => 0, cellTree: () => null };
+  if (!ors.length) return { count: 0, tree: null, heights: [0], at: () => ({ count: 0, tree: null }), cellCount: () => 0, cellTree: () => null, thinned: false, work: 0, fullWork: 0, fullCells: 0 };
   const dims = [...new Set(c)];
-  const sx = normalSet(B[0], dims), sy = normalSet(B[1], dims), sz = normalSet(B[2], dims);
+  let sx = normalSet(B[0], dims), sy = normalSet(B[1], dims), sz = normalSet(B[2], dims);
+  /** @param {number[]} n @returns {number} */
+  const workOf = (n) => n[0] * n[1] * n[2] * (n[0] + n[1] + n[2]) / 2;
+  const full = [sx.vals.length, sy.vals.length, sz.vals.length];
+  const fullWork = workOf(full), fullCells = full[0] * full[1] * full[2];
+  let thinned = false;
+  if (budget && (fullWork > budget.work || fullCells > (budget.cells || DP_MAX_CELLS))) {
+    const cap = dpCaps(full, budget);
+    if (cap[0] < full[0]) sx = normalSet(B[0], dims, cap[0]);
+    if (cap[1] < full[1]) sy = normalSet(B[1], dims, cap[1]);
+    if (cap[2] < full[2]) sz = normalSet(B[2], dims, cap[2]);
+    thinned = true;
+  }
   const VX = sx.vals, VY = sy.vals, VZ = sz.vals, PX = sx.prevIdx, PY = sy.prevIdx, PZ = sz.prevIdx;
   const nx = VX.length, ny = VY.length, nz = VZ.length;
   const work = nx * ny * nz * (nx + ny + nz) / 2;
-  if (!force && work > DP_WORK_LIMIT) return null;
+  if (!budget && !force && work > DP_WORK_LIMIT) return null;
   const S = nx * ny * nz, syz = ny * nz;
   const f = new Int32Array(S), ct = new Int8Array(S), ca = new Int32Array(S), nb = new Int32Array(S);
   for (let ix = 0; ix < nx; ix++) {
@@ -660,7 +816,7 @@ function dpTable(c, B, force, vertical) {
   const cellCount = (X, Y, Z) => { const i = idx(X, Y, Z); return i ? f[i[0] * syz + i[1] * nz + i[2]] : 0; };
   /** @param {number} X @param {number} Y @param {number} Z @returns {TreeNode | null} */
   const cellTree = (X, Y, Z) => { const i = idx(X, Y, Z); const t = i ? rec(i[0], i[1], i[2]) : null; return t ? simplifyTree(t) : null; };
-  return { count: top.count, tree: top.tree, heights: VZ, at, cellCount, cellTree };
+  return { count: top.count, tree: top.tree, heights: VZ, at, cellCount, cellTree, thinned, work, fullWork, fullCells };
 }
 
 /**
@@ -958,41 +1114,48 @@ function layeredSearch(c, B, target, budgetMs) {
  * ========================================================================= */
 
 /**
+ * @typedef {{thinned: boolean, work: number, fullWork: number, fullCells: number, ms: number}} DpEffort
+ *   Aufwand der Blockmuster-Rechnung: ausgedünnt?, getriebener und vollständiger Aufwand, Rechenzeit
  * @typedef {{carton: number[], count: number, upper: number, status: "optimal" | "open",
- *   pattern: Pattern | null, rule: Rule | null, mixed: boolean}} Analysis
+ *   pattern: Pattern | null, rule: Rule | null, mixed: boolean, approx: boolean, searchable: boolean,
+ *   effort: DpEffort}} Analysis
+ *   approx: Die Blockmuster wurden vereinfacht gerechnet (ausgedünnte Schnittpositionen).
+ *   searchable: Die Suche nach verschränkten Mustern kann hier noch etwas bringen.
  */
+
+/** Bis zu so vielen Kartons sucht analyzeCarton nach verschränkten Mustern */
+const SEARCH_MAX_COUNT = 40;
+
 
 /**
  * Bestes Muster für einen Karton: erst Blockmuster, dann Suche nach verschränkten.
  * @param {number[]} cartonMM @param {number[]} binMM @param {number} budgetMs
  * @param {(a: Analysis) => void} [onStep] Zwischenergebnis nach den Blockmustern
+ * @param {{dpWork?: number}} [opt] dpWork: Aufwand, den die Blockmuster-Rechnung höchstens treibt
+ *   (Voreinstellung DP_QUICK_WORK). Reicht er nicht, wird vereinfacht gerechnet (approx).
  * @returns {Analysis}
  */
-function analyzeCarton(cartonMM, binMM, budgetMs, onStep) {
+function analyzeCarton(cartonMM, binMM, budgetMs, onStep, opt) {
   const c = [...cartonMM].sort((a, b) => b - a);
   const integral = [...c, ...binMM].every((v) => Math.abs(v - Math.round(v)) < 1e-9);
-  const units = integral ? [1, 2, 5, 10] : [0.1, 0.5, 1, 2, 5, 10];
-  const base = units[0];
-  /** @param {number} u */
-  const toU = (u) => ({ cu: c.map((v) => Math.max(1, Math.ceil(v / u - 1e-9))), Bu: binMM.map((v) => Math.floor(v / u + 1e-9)) });
-  let dp = null, used = base;
-  for (const u of units) { const { cu, Bu } = toU(u); dp = dpSolve(cu, Bu, false); used = u; if (dp) break; }
-  if (!dp) { const { cu, Bu } = toU(units[units.length - 1]); dp = dpSolve(cu, Bu, true); }
-  let count = dp ? dp.count : 0;
-  /** @type {Pattern | null} */ let pattern = dp && dp.tree ? { kind: "T", root: dp.tree } : null;
-  if (used > base) {
-    const g = bestGrid(c, binMM);
-    if (g.count > count && g.tree) { count = g.count; pattern = { kind: "T", root: g.tree }; }
-  }
-  const { cu: cb, Bu: Bb } = toU(base);
+  const base = integral ? 1 : 0.1;
+  const cb = c.map((v) => Math.max(1, Math.ceil(v / base - 1e-9))), Bb = binMM.map((v) => Math.floor(v / base + 1e-9));
+  const tDp = nowMs();
+  const dp = /** @type {NonNullable<ReturnType<typeof dpSolve>>} */ (dpSolve(cb, Bb, true, { work: (opt && opt.dpWork) || DP_QUICK_WORK, cells: DP_MAX_CELLS }));
+  /** @type {DpEffort} */ const effort = { thinned: dp.thinned, work: dp.work, fullWork: dp.fullWork, fullCells: dp.fullCells, ms: nowMs() - tDp };
+  let count = dp.count;
+  /** @type {Pattern | null} */ let pattern = dp.tree ? { kind: "T", root: dp.tree } : null;
   let upper = upperBoundInt(cb, Bb);
   let status = /** @type {"optimal" | "open"} */ (count >= upper ? "optimal" : "open");
   let mixed = false;
   /** @returns {Analysis} */
-  const result = () => ({ carton: c, count, upper, status, pattern, rule: pattern ? patternRule(pattern, binMM) : null, mixed });
+  const result = () => ({
+    carton: c, count, upper, status, pattern, rule: pattern ? patternRule(pattern, binMM) : null, mixed,
+    approx: effort.thinned && status !== "optimal", searchable: status === "open" && count + 1 <= SEARCH_MAX_COUNT && count + 1 <= upper, effort
+  });
   if (onStep) onStep(result());
   const t0 = nowMs();
-  while (status === "open" && count + 1 <= 40 && count + 1 <= upper) {
+  while (status === "open" && count + 1 <= SEARCH_MAX_COUNT && count + 1 <= upper) {
     const left = budgetMs - (nowMs() - t0);
     if (left <= 20) break;
     const lay = layeredSearch(cb, Bb, count + 1, Math.min(left / 3, 1500));
@@ -1025,7 +1188,8 @@ function analyzeCarton(cartonMM, binMM, budgetMs, onStep) {
  *   verts?: number[][], example?: number[] | null}} GenRule
  * @typedef {{step?: number, random?: boolean, search?: number | boolean, patience?: number, maxLines?: number}} GenPass
  * @typedef {{nmax: number, passes: GenPass[], searchMs: number, searchMaxCount: number,
- *   maxMs: number, grow?: boolean, seed?: number}} GenOptions
+ *   maxMs: number, grow?: boolean, seed?: number, res?: number, dpWork?: number}} GenOptions
+ *   res: Raster der Kartonmaße in mm (1 oder 10). dpWork: Aufwand je Blockmuster-Rechnung.
  */
 
 /**
@@ -1079,14 +1243,30 @@ function replaceLeaf(nd, path, repl) {
 }
 
 /**
- * Erzeugt Regeln "when … then N" für alle Kartons l >= w >= h in ganzen mm.
- * @param {number[]} binMM [L, B, H]
+ * Schrittweite der Rasterlinien je Kartonkante. Die Angaben in den Voreinstellungen
+ * (40, 20, 10) gelten für einen Bin von etwa 600 x 400 x 400; für andere Größen und
+ * Formen werden sie je Kante umgerechnet, damit die Zahl der Linien ähnlich bleibt.
+ * @param {number} step Angabe aus der Voreinstellung @param {number[]} M größte Kartonkanten [l, w, h] in Rastereinheiten
+ * @returns {number[]} Schrittweite je Kante, mindestens 1
+ */
+function gridSteps(step, M) {
+  return M.map((m) => Math.max(1, Math.round(step * Math.min(M[0] / 600, m / 400))));
+}
+
+/**
+ * Erzeugt Regeln "when … then N" für alle Kartons l >= w >= h auf dem Raster opt.res
+ * (1 = ganze mm, 10 = ganze cm). Gerechnet wird in Rastereinheiten, die Regeln selbst
+ * stehen in mm und gelten für jeden Karton.
+ * @param {number[]} binInMM [L, B, H]
  * @param {GenOptions} opt
  * @param {(p: object) => void} [onProgress]
  */
-function generateRules(binMM, opt, onProgress) {
+function generateRules(binInMM, opt, onProgress) {
   const t0 = nowMs();
   const nmax = opt.nmax;
+  const res = opt.res || 1;
+  const binMM = binInMM.map((v) => v / res);
+  /** @type {DpBudget} */ const dpBudget = { work: opt.dpWork || DP_WORK_LIMIT };
   const Bint = binMM.map((v) => Math.floor(v + 1e-9));
   const [M0, M1, M2] = [...binMM].sort((a, b) => b - a).map((v) => Math.floor(v + 1e-9));
   /** @type {GenRule[]} */ const rules = [];
@@ -1182,7 +1362,7 @@ function generateRules(binMM, opt, onProgress) {
     if (m !== undefined) return m;
     stats.growDp++;
     const t1 = nowMs();
-    const r = dpSolve(q, Bint, false);
+    const r = dpSolve(q, Bint, false, dpBudget);
     stats.dpMs += nowMs() - t1;
     const sc = r ? Math.min(r.count, nmax) : 0;
     dpMemo.set(key, sc);
@@ -1209,7 +1389,7 @@ function generateRules(binMM, opt, onProgress) {
       at[k] = lo;
     }
     if (at[0] === q[0] && at[1] === q[1] && at[2] === q[2]) return null;
-    const r = dpSolve(at, Bint, false);
+    const r = dpSolve(at, Bint, false, dpBudget);
     if (!r || !r.tree || Math.min(r.count, nmax) < sc) return null;
     return { tree: r.tree, count: r.count, at };
   };
@@ -1223,7 +1403,7 @@ function generateRules(binMM, opt, onProgress) {
     if (!m) {
       stats.probes++;
       const t1 = nowMs();
-      const dp = dpSolve(q, Bint, false);
+      const dp = dpSolve(q, Bint, false, dpBudget);
       stats.dpMs += nowMs() - t1;
       if (dp && dp.tree) {
         sc = Math.min(dp.count, nmax);
@@ -1335,12 +1515,13 @@ function generateRules(binMM, opt, onProgress) {
       stats.randomLines = li;
       continue;
     }
-    const s = pass.step;
+    const [s0, s1, s2] = gridSteps(/** @type {number} */ (pass.step), [M0, M1, M2]);
+    const s = s0 * res;
     const useSearch = !!pass.search && opt.searchMs > 0;
     /** @type {{k: number, fixed: number[], v0: number, v1: number}[]} */ const lines = [];
-    for (const h of gridVals(s, M2)) for (const w of gridVals(s, M1)) if (w >= h) lines.push({ k: 0, fixed: [0, w, h], v0: w, v1: M0 });
-    for (const h of gridVals(s, M2)) for (const l of gridVals(s, M0)) if (l >= h) lines.push({ k: 1, fixed: [l, 0, h], v0: h, v1: Math.min(l, M1) });
-    for (const w of gridVals(s, M1)) for (const l of gridVals(s, M0)) if (l >= w) lines.push({ k: 2, fixed: [l, w, 0], v0: 1, v1: Math.min(w, M2) });
+    for (const h of gridVals(s2, M2)) for (const w of gridVals(s1, M1)) if (w >= h) lines.push({ k: 0, fixed: [0, w, h], v0: w, v1: M0 });
+    for (const h of gridVals(s2, M2)) for (const l of gridVals(s0, M0)) if (l >= h) lines.push({ k: 1, fixed: [l, 0, h], v0: h, v1: Math.min(l, M1) });
+    for (const w of gridVals(s1, M1)) for (const l of gridVals(s0, M0)) if (l >= w) lines.push({ k: 2, fixed: [l, w, 0], v0: 1, v1: Math.min(w, M2) });
     for (let li = 0; li < lines.length; li++) {
       const L = lines[li];
       probeLine(L.k, L.fixed, L.v0, L.v1, useSearch);
@@ -1405,10 +1586,16 @@ function generateRules(binMM, opt, onProgress) {
     }
   }
   const final = kept.filter((_, i) => mark[i]);
-  for (const r of final) r.example = exampleCarton(/** @type {number[][]} */ (r.verts));
+  for (const r of final) {
+    // zurück in mm: Bedingungen mit den Bin-Maßen in mm, Beispielkarton auf dem Raster
+    const ex = exampleCarton(/** @type {number[][]} */ (r.verts));
+    r.example = ex ? ex.map((v) => v * res) : null;
+    r.verts = (r.verts || []).map((v) => v.map((x) => x * res));
+    r.cons = r.cons.map((k) => ({ t: k.t, ax: k.ax, D: binInMM[k.ax] }));
+  }
   final.sort((a, b) => (b.score - a.score) || (vol(b.example) - vol(a.example)));
   return {
-    bin: binMM, nmax, rules: final, stats,
+    bin: binInMM, nmax, res, rules: final, stats,
     meta: { passes: opt.passes, searchMs: opt.searchMs, aborted, elapsedMs: nowMs() - t0, candidates: rules.length }
   };
 }
@@ -1443,21 +1630,71 @@ const QUALITY_PRESETS = {
 };
 
 /**
- * @param {QualityKey} quality @param {number} nmax @returns {GenOptions}
+ * @param {QualityKey} quality @param {number} nmax @param {number} [res] Raster in mm (1 oder 10)
+ * @param {number} [maxMs] Zeitlimit, wenn es von der Voreinstellung abweichen soll
+ * @returns {GenOptions}
  */
-function genOptions(quality, nmax) {
+function genOptions(quality, nmax, res, maxMs) {
   const q = QUALITY_PRESETS[quality];
-  return { nmax, passes: q.passes, searchMs: q.searchMs, searchMaxCount: nmax, maxMs: q.maxMs, grow: true };
+  return { nmax, passes: q.passes, searchMs: q.searchMs, searchMaxCount: nmax, maxMs: maxMs || q.maxMs, grow: true, res: res || 1 };
+}
+
+/**
+ * Übliche Zahl der Löser-Aufrufe und der Suchen je Genauigkeit bei Höchstanzahl 30
+ * (gemessen am Bin 603 x 403 x 404). Grundlage der Zeitschätzung.
+ * @type {Record<QualityKey, {calls: number, searches: number}>}
+ */
+const GEN_CALLS = { fast: { calls: 25000, searches: 1800 }, std: { calls: 46000, searches: 4400 }, full: { calls: 73000, searches: 10400 } };
+
+/**
+ * Faktor, mit dem der Aufwand mit Höchstanzahl und Raster wächst (grobe Näherung).
+ * @param {number} nmax @returns {number}
+ */
+function genScale(nmax) { return Math.pow(nmax / 30, 1.4); }
+
+/**
+ * Schätzt die Dauer der Regelerzeugung: misst die Blockmuster-Rechnung an Stichproben und
+ * rechnet mit der üblichen Zahl der Aufrufe hoch. Die Schätzung ist grob (Faktor 2).
+ * @param {number[]} binInMM @param {QualityKey} quality @param {number} nmax @param {number} [res]
+ * @returns {{ms: number, solveMs: number}}
+ */
+function estimateRulesMs(binInMM, quality, nmax, res) {
+  const r = res || 1;
+  const bin = binInMM.map((v) => v / r);
+  const Bint = bin.map((v) => Math.floor(v + 1e-9));
+  const [M0, M1, M2] = [...Bint].sort((a, b) => b - a);
+  let seed = 4711;
+  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const t0 = nowMs();
+  let n = -4, sum = 0;
+  // die ersten Messungen dienen nur dem Anlauf und zählen nicht
+  for (let i = 0; i < 6000 && n < 60 && nowMs() - t0 < 2500; i++) {
+    const q = [1 + Math.floor(rand() * M0), 1 + Math.floor(rand() * M1), 1 + Math.floor(rand() * M2)].sort((a, b) => b - a);
+    const g = bestGrid(q, bin).count;
+    // geprüft wird vor allem dort, wo schon viele Kartons passen
+    if (g < nmax / 4 || g >= nmax) continue;
+    const t1 = nowMs();
+    dpSolve(q, Bint, false, { work: DP_WORK_LIMIT });
+    if (n >= 0) sum += nowMs() - t1;
+    n++;
+  }
+  const solveMs = n > 0 ? sum / n : 2;
+  const g = GEN_CALLS[quality], q = QUALITY_PRESETS[quality];
+  // mehr Regeln bei höherer Höchstanzahl, weniger Aufrufe auf einem groben Raster
+  const f = genScale(nmax) * Math.min(1, Math.pow(M0 / 600, 0.8));
+  // Schlussprüfung: jede Linie (w, h) gegen die Regeln
+  const sweepMs = (M1 * M2 / 2) * 1500 * f * 1.5e-5;
+  return { ms: f * (g.calls * solveMs + g.searches * 0.67 * q.searchMs) + sweepMs, solveMs };
 }
 
 /** @param {number[]} bin @returns {string} z. B. "603x403x404" */
-function binKeyOf(bin) { return bin.map(numText).join("x"); }
+function binKeyOf(bin) { return bin.map((v) => numText(v)).join("x"); }
 
 /**
  * Gespeichertes Format einer Regelliste (so liegen die Dateien in rules/).
  * rules: [Anzahl gedeckelt, Kartons im Muster, Bedingungen flach [l,w,h,Achse, …], Muster, Quelle]
- * @typedef {{bin: number[], nmax: number, quality: string, rules: [number, number, number[], string, string][],
- *   stats?: object, meta?: object}} RulesData
+ * @typedef {{bin: number[], nmax: number, quality: string, res?: number, rules: [number, number, number[], string, string][],
+ *   stats?: object, meta?: {aborted?: boolean}}} RulesData
  * @typedef {{score: number, count: number, cons: Con[], pat: string, src: string}} StoredRule
  */
 
@@ -1466,7 +1703,7 @@ function binKeyOf(bin) { return bin.map(numText).join("x"); }
  */
 function packRulesData(res, quality) {
   return {
-    bin: res.bin, nmax: res.nmax, quality,
+    bin: res.bin, nmax: res.nmax, quality, res: res.res,
     rules: res.rules.map((r) => [r.score, r.count, r.cons.flatMap((k) => [k.t[0], k.t[1], k.t[2], k.ax]), patternString(r.pat), r.src]),
     stats: res.stats, meta: res.meta
   };
@@ -1485,16 +1722,17 @@ function unpackRules(data) {
  * Regelliste als Text, eine Regel pro Zeile.
  * @param {number[]} bin @param {number} nmax @param {{score: number, cons: Con[], pat: string}[]} rules
  * @param {boolean} withPattern Muster hinter "|" anhängen
+ * @param {string} [unit] Einheit der Maße in den Regeln ("mm", "cm" oder "m")
  * @returns {string}
  */
-function rulesToText(bin, nmax, rules, withPattern) {
+function rulesToText(bin, nmax, rules, withPattern, unit = "mm") {
   const head = [
-    `# Regeln für Bin ${bin.map(numText).join(" x ")} mm (Länge x Breite x Höhe)`,
-    "# Karton: l >= w >= h (längste, mittlere, kürzeste Kante). Es gilt die höchste Anzahl aller erfüllten Regeln.",
+    `# Regeln für Bin ${bin.map((v) => lenText(v, unit)).join(" x ")} ${unit} (Länge x Breite x Höhe)`,
+    `# Karton: l >= w >= h (längste, mittlere, kürzeste Kante), alle Maße in ${unit}. Es gilt die höchste Anzahl aller erfüllten Regeln.`,
     `# "then ${nmax}" bedeutet ${nmax} oder mehr.${withPattern ? " Hinter | steht das Packmuster." : ""}`
   ];
   return head.concat(rules.map((r) => {
-    const t = ruleText(r.cons, Math.min(r.score, nmax));
+    const t = ruleText(r.cons, Math.min(r.score, nmax), unit);
     return withPattern ? `${t} | ${r.pat}` : t;
   })).join("\n") + "\n";
 }
@@ -1505,6 +1743,7 @@ if (typeof module !== "undefined") {
     consHold, ruleText, consText, termText, patternString, parsePattern, dpSolve, dpTable, normalSet, upperBoundInt, searchPack,
     portfolioSearch, dagFromPlacements, analyzeCarton, generateRules, layeredSearch, patternHasDag, QUALITY_PRESETS,
     genOptions, binKeyOf, packRulesData, unpackRules, rulesToText, numText, dot, vol, regionVertices, lookupRules,
-    exampleCarton, verticesInside, reduceTree, bestGrid, addTerms, polyVertices, lpMax, domainRows, simplifyTree, treeCount
+    exampleCarton, verticesInside, reduceTree, bestGrid, addTerms, polyVertices, lpMax, domainRows, simplifyTree, treeCount,
+    UNIT_MM, lenText, gridSteps, estimateRulesMs, layoutBlocks, DP_QUICK_WORK, DP_MAX_CELLS, SEARCH_MAX_COUNT, planDpWork
   };
 }

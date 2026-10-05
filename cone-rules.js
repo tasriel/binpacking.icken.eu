@@ -29,9 +29,9 @@
 if (typeof module !== "undefined" && typeof coneLen === "undefined") {
   // eslint-disable-next-line no-var
   var { pruneTerms, addTerms, patternLayout, normalSet, parsePattern, patternString, numText, dot, reduceTree,
-    polyVertices, simplifyTree, treeCount, termLE } = require("./packcore.js");
+    polyVertices, simplifyTree, treeCount, termLE, layoutBlocks, upperBoundInt, gridSteps, lenText } = require("./packcore.js");
   // eslint-disable-next-line no-var
-  var { coneHeight, coneLen, coneWid, coneCheck, parseCone, coneNum, analyzeCone } = require("./cone.js");
+  var { coneHeight, coneLen, coneWid, coneCheck, parseCone, coneNum, analyzeCone, coneVolume } = require("./cone.js");
 }
 
 /** @type {number[][]} */
@@ -39,6 +39,8 @@ const CR_PERMS = typeof PERMS !== "undefined" ? PERMS : require("./packcore.js")
 /** @type {number} */
 const CR_SUPPORT = typeof CONE_SUPPORT !== "undefined" ? CONE_SUPPORT : require("./cone.js").CONE_SUPPORT;
 const CR_EDGE = "lwh";
+/** @type {Record<string, number>} mm je Einheit */
+const UNIT_MM_CR = { mm: 1, cm: 10, m: 1000 };
 /** Ab so vielen Bedingungen wird nicht mehr geprüft, welche aus den anderen folgen */
 const CR_MAX_LP_ROWS = 140;
 /** @returns {number} */
@@ -162,11 +164,12 @@ function coneLayout(root, c, bin) {
  * ========================================================================= */
 
 /**
- * Bereich, für den die Regeln gelten: l >= w >= h >= 1 (Kartons ab 1 mm Kantenlänge).
+ * Bereich, für den die Regeln gelten: l >= w >= h >= 1 mm.
+ * @param {number} [minH] kleinste Kante in den Einheiten der Rechnung (1 mm)
  * @returns {Row[]}
  */
-function coneDomainRows() {
-  return [{ a: [-1, 1, 0], b: 0 }, { a: [0, -1, 1], b: 0 }, { a: [0, 0, -1], b: -1 }, { a: [1, 0, 0], b: 1e7 }];
+function coneDomainRows(minH = 1) {
+  return [{ a: [-1, 1, 0], b: 0 }, { a: [0, -1, 1], b: 0 }, { a: [0, 0, -1], b: -minH }, { a: [1, 0, 0], b: 1e7 }];
 }
 
 /** @param {number[]} p @param {number[]} n @param {number} b @param {number} kind @returns {ConeRow} */
@@ -203,16 +206,17 @@ function crSpansFace(pts) {
 /**
  * Entfernt doppelte Bedingungen und solche, die aus den anderen folgen (unter l >= w >= h >= 1).
  * Übrig bleiben die Bedingungen, die eine Seitenfläche des Bereichs bilden.
- * @param {ConeRow[]} rows @returns {ConeRow[]}
+ * @param {ConeRow[]} rows @param {number} [minH] kleinste Kante in den Einheiten der Rechnung (1 mm)
+ * @returns {ConeRow[]}
  */
-function pruneRows(rows) {
+function pruneRows(rows, minH = 1) {
   /** @type {Map<string, ConeRow>} */ const map = new Map();
   for (const r of rows) {
     // gleiche Ebene, egal mit welchem Faktor geschrieben: die strengere Fassung behalten
     const sc = Math.max(Math.abs(r.a[0]), Math.abs(r.a[1]), Math.abs(r.a[2]));
     if (sc < 1e-12) continue;
     // gilt ohnehin für jeden Karton mit l >= w >= h >= 1
-    if (r.a[0] <= 1e-12 && r.a[0] + r.a[1] <= 1e-12 && r.a[0] + r.a[1] + r.a[2] <= r.b + 1e-12 && r.a[0] + r.a[1] + r.a[2] <= 1e-12) continue;
+    if (r.a[0] <= 1e-12 && r.a[0] + r.a[1] <= 1e-12 && (r.a[0] + r.a[1] + r.a[2]) * minH <= r.b + 1e-12 && r.a[0] + r.a[1] + r.a[2] <= 1e-12) continue;
     const key = r.a.map((v) => Math.round(v / sc * 1e8) / 1e8).join(",");
     const o = map.get(key);
     if (!o) { map.set(key, r); continue; }
@@ -227,7 +231,7 @@ function pruneRows(rows) {
     kept.push(r);
   }
   if (kept.length > CR_MAX_LP_ROWS) return kept.sort(rowOrder);
-  const dom = coneDomainRows();
+  const dom = coneDomainRows(minH);
   const verts = polyVertices(/** @type {Row[]} */ (kept).concat(dom));
   // leerer oder flacher Bereich: nichts weiter entfernen
   if (!crSpansFace(verts) || !verts.some((v) => kept.concat(/** @type {ConeRow[]} */ (dom)).some((r) => r.b - dot(r.a, v) > 1e-4 * (1 + Math.abs(r.b))))) return kept.sort(rowOrder);
@@ -246,6 +250,8 @@ function coneRule(root, bin, ref) {
   const layers = coneLayersOf(root);
   const H = coneHeight(bin);
   const slope = bin.coneH > 0;
+  // Auflage und kleinste Kante sind in mm festgelegt; bin.unit sagt, wie viele mm eine Einheit hat
+  const sup = CR_SUPPORT / (bin.unit || 1), minH = 1 / (bin.unit || 1);
   const kL = slope ? (bin.topL - bin.botL) / bin.coneH : 0, kW = slope ? (bin.topW - bin.botW) / bin.coneH : 0;
   /** @type {ConeRow[]} */ const fit = [];
   /** @type {SymLayer[]} */ const syms = [];
@@ -292,7 +298,7 @@ function coneRule(root, bin, ref) {
         let best = -1, bs = -Infinity;
         for (let i = 0; i < lo.length; i++) {
           const q = lo[i];
-          const s = Math.min(ux1 - q[0], q[1] - ux0, uy1 - q[2], q[3] - uy0) - CR_SUPPORT;
+          const s = Math.min(ux1 - q[0], q[1] - ux0, uy1 - q[2], q[3] - uy0) - sup;
           if (s > bs) { bs = s; best = i; }
         }
         if (best < 0 || bs < -1e-9) ok = false;
@@ -309,10 +315,10 @@ function coneRule(root, bin, ref) {
           seen.add(key);
           // Ende des oberen Kartons liegt hinter dem Anfang des unteren
           const r1 = crAdd(crAdd(crArg(us, c), crUnit(ue, 1)), half(crArg(BT, c)));
-          for (const tu of UT) for (const vb of bs2) rows.push(crSupportRow(crAdd(half(tu), vb), r1));
+          for (const tu of UT) for (const vb of bs2) rows.push(crSupportRow(crAdd(half(tu), vb), r1, sup));
           // Ende des unteren Kartons liegt hinter dem Anfang des oberen
           const r2 = crAdd(crAdd(crArg(bs2, c), crUnit(be, 1)), half(crArg(UT, c)));
-          for (const tb of BT) for (const vu of us) rows.push(crSupportRow(crAdd(half(tb), vu), r2));
+          for (const tb of BT) for (const vu of us) rows.push(crSupportRow(crAdd(half(tb), vu), r2, sup));
         };
         axis(0, u.sx, u.p[0], U.tx, b.sx, b.p[0], L.tx);
         axis(1, u.sy, u.p[1], U.ty, b.sy, b.p[1], L.ty);
@@ -321,11 +327,11 @@ function coneRule(root, bin, ref) {
     return { rows, ok };
   };
 
-  if (layers.length === 1) return { count, rows: pruneRows(fit), ok: true, ref: ref || null };
+  if (layers.length === 1) return { count, rows: pruneRows(fit, minH), ok: true, ref: ref || null };
   /** @type {number[][]} */ let cands = [];
   if (ref) cands = [ref];
   else {
-    const verts = polyVertices(/** @type {Row[]} */ (fit).concat(coneDomainRows()));
+    const verts = polyVertices(/** @type {Row[]} */ (fit).concat(coneDomainRows(minH)));
     const big = coneExample(verts, fit, null);
     if (big) for (const f of [1, 0.97, 0.93, 0.88, 0.8, 0.7]) cands.push(big.map((v) => Math.max(1, Math.floor(v * f))));
     if (verts.length) cands.push([0, 1, 2].map((e) => verts.reduce((s, v) => s + v[e], 0) / verts.length));
@@ -335,15 +341,15 @@ function coneRule(root, bin, ref) {
     if (!ref && !rowsHold(fit, c, 1e-7)) continue;
     const s = support(c);
     if (!first) first = s;
-    if (s.ok) return { count, rows: pruneRows(fit.concat(s.rows)), ok: true, ref: c };
+    if (s.ok) return { count, rows: pruneRows(fit.concat(s.rows), minH), ok: true, ref: c };
   }
-  return { count, rows: pruneRows(fit.concat(first ? first.rows : [])), ok: false, ref: ref || null };
+  return { count, rows: pruneRows(fit.concat(first ? first.rows : []), minH), ok: false, ref: ref || null };
 }
 
-/** @param {number[]} left @param {number[]} right @returns {ConeRow} left + CONE_SUPPORT <= right */
-function crSupportRow(left, right) {
+/** @param {number[]} left @param {number[]} right @param {number} sup Auflage @returns {ConeRow} left + sup <= right */
+function crSupportRow(left, right, sup) {
   const net = [left[0] - right[0], left[1] - right[1], left[2] - right[2]];
-  return crRow(net.map((v) => Math.max(v, 0)), net.map((v) => Math.max(-v, 0)), -CR_SUPPORT, 2);
+  return crRow(net.map((v) => Math.max(v, 0)), net.map((v) => Math.max(-v, 0)), -sup, 2);
 }
 
 /**
@@ -386,31 +392,42 @@ function crNum(v, up) {
   return String(Math.round(r * 1e4) / 1e4);
 }
 
-/** @param {ConeRow} row @returns {string} z. B. 3*w<=515+0.125*h */
-function rowText(row) {
+/**
+ * @param {ConeRow} row @param {string} [unit] Einheit der Maße ("mm", "cm" oder "m")
+ * @returns {string} z. B. 3*w<=515+0.125*h
+ */
+function rowText(row, unit = "mm") {
+  // Die Faktoren vor l, w, h haben keine Einheit; nur die festen Längen werden umgerechnet.
+  const f = UNIT_MM_CR[unit] || 1;
+  /** @param {number} v @param {boolean} up @returns {string} */
+  const len = (v, up) => {
+    const sc = f === 1 ? 1e4 : 1e6;
+    const r = (up ? Math.ceil(v / f * sc - 1e-6) : Math.floor(v / f * sc + 1e-6)) / sc;
+    return String(Math.round(r * sc) / sc);
+  };
   /** @type {string[]} */ const left = [];
   /** @type {string[]} */ const right = [];
   for (let e = 0; e < 3; e++) {
     const s = crNum(row.p[e], true);
     if (s !== "0") left.push((s === "1" ? "" : s + "*") + CR_EDGE[e]);
   }
-  if (row.b < -1e-9) left.push(crNum(-row.b, true));
+  if (row.b < -1e-9) left.push(len(-row.b, true));
   /** @type {string[]} */ const neg = [];
   for (let e = 0; e < 3; e++) {
     const s = crNum(row.n[e], false);
     if (s !== "0") neg.push((s === "1" ? "" : s + "*") + CR_EDGE[e]);
   }
-  if (row.b > 1e-9 || (!neg.length && row.b >= -1e-9)) right.push(crNum(Math.max(0, row.b), false));
+  if (row.b > 1e-9 || (!neg.length && row.b >= -1e-9)) right.push(len(Math.max(0, row.b), false));
   right.push(...neg);
   if (!left.length) left.push("0");
   return left.join("+") + "<=" + right.join("+");
 }
 
-/** @param {ConeRow[]} rows @returns {string} */
-function rowsText(rows) { return rows.map(rowText).join(" and "); }
+/** @param {ConeRow[]} rows @param {string} [unit] Einheit der Maße @returns {string} */
+function rowsText(rows, unit) { return rows.map((r) => rowText(r, unit)).join(" and "); }
 
-/** @param {ConeRow[]} rows @param {number} n @returns {string} */
-function coneRuleText(rows, n) { return "when " + rowsText(rows) + " then " + n; }
+/** @param {ConeRow[]} rows @param {number} n @param {string} [unit] Einheit der Maße @returns {string} */
+function coneRuleText(rows, n, unit) { return "when " + rowsText(rows, unit) + " then " + n; }
 
 /** @param {ConeRow[]} rows @returns {string} */
 function rowsKey(rows) { return rows.map((r) => r.a.map((v) => Math.round(v * 1e6) / 1e6).join(".") + "@" + Math.round(r.b * 1e6) / 1e6).sort().join("|"); }
@@ -550,7 +567,7 @@ function layerStack(nd, r) {
 }
 
 /**
- * @typedef {{cnt: number, tree: TreeNode | null, feet: number[][]}} LayerOpt
+ * @typedef {{cnt: number, tree: TreeNode | null, feet: number[][] | null}} LayerOpt
  *   feet: Grundflächen [x0, x1, y0, y1] der Stapel, gemessen ab der Mitte der Lage
  */
 
@@ -559,25 +576,45 @@ function layerStack(nd, r) {
  * Bin an ihrer Unterkante ist, und oben eine Lage aus Stapeln beliebiger Höhe.
  * Benachbarte Lagen werden nur kombiniert, wenn jeder Karton der oberen aufliegt.
  * @param {number[]} cartonMM @param {ConeBin} bin
- * @param {{enough?: number, workLimit?: number}} [opt] enough: ab dieser Anzahl reicht das erste Muster
- * @returns {{root: TreeNode, count: number} | null} null, wenn nichts passt oder die Rechnung zu aufwendig wäre
+ * @param {{enough?: number, workLimit?: number}} [opt] enough: ab dieser Anzahl reicht das erste Muster.
+ *   workLimit: Aufwand, den die Rechnung höchstens treibt. Reicht er nicht, wird vereinfacht
+ *   gerechnet (weniger Schnittpositionen, weniger Lagenfolgen); das Muster bleibt gültig.
+ * @returns {{root: TreeNode, count: number, thinned: boolean, work: number, fullWork: number} | null}
+ *   null, wenn nichts passt. thinned: vereinfacht gerechnet; work / fullWork: getriebener und voller Aufwand.
  */
 function coneLayerPattern(cartonMM, bin, opt) {
   const c = [...cartonMM].sort((a, b) => b - a);
   const enough = (opt && opt.enough) || Infinity;
   const workLimit = (opt && opt.workLimit) || 6e7;
   const H = coneHeight(bin);
+  const sup = CR_SUPPORT / (bin.unit || 1);
   const integral = c.every((v) => Math.abs(v - Math.round(v)) < 1e-9);
-  for (const unit of (integral ? [1, 2, 5, 10] : [0.1, 0.5, 1, 2, 5, 10])) {
+  for (const unit of [integral ? 1 : 0.1]) {
     const cu = c.map((v) => Math.max(1, Math.ceil(v / unit - 1e-9)));
     const shrink = Math.min(...c.map((v, i) => v / (cu[i] * unit)));
     const Lu = Math.floor(bin.topL / unit + 1e-9), Wu = Math.floor(bin.topW / unit + 1e-9), Hu = Math.floor(H / unit + 1e-9);
     const dims = [...new Set(cu)];
     const minE = Math.min(...cu);
     if (minE > Hu) return null;
-    const sx = normalSet(Lu, dims), sy = normalSet(Wu, dims);
-    const NZ = normalSet(Hu, dims).vals;
-    const tableWork = sx.vals.length * sy.vals.length * (sx.vals.length + sy.vals.length) / 2;
+    let sx = normalSet(Lu, dims), sy = normalSet(Wu, dims);
+    /** @param {number} a @param {number} b @returns {number} */
+    const workOf = (a, b) => a * b * (a + b) / 2;
+    // etwa so viele Lagentabellen braucht die volle Rechnung: drei ebene und je Stapelhöhe eine
+    const tablesFull = 3 + Math.min(60, cu.reduce((acc, e) => acc + Math.floor(Hu / e), 0));
+    const fullWork = workOf(sx.vals.length, sy.vals.length) * tablesFull;
+    let thinned = false;
+    {
+      // eine Tabelle darf höchstens ein Zwölftel des Aufwands kosten, sonst Schnittpositionen ausdünnen
+      const cap = [sx.vals.length, sy.vals.length];
+      while (workOf(cap[0], cap[1]) > workLimit / 12 && Math.max(cap[0], cap[1]) > 6) {
+        const i = cap[0] >= cap[1] ? 0 : 1;
+        cap[i] = Math.max(6, Math.floor(cap[i] * 0.88));
+      }
+      // der Boden-Querschnitt bleibt genau erhalten, dort liegt die unterste Lage
+      if (cap[0] < sx.vals.length) { sx = normalSet(Lu, dims, cap[0], [Math.floor(coneLen(bin, 0) / unit + 1e-9)]); thinned = true; }
+      if (cap[1] < sy.vals.length) { sy = normalSet(Wu, dims, cap[1], [Math.floor(coneWid(bin, 0) / unit + 1e-9)]); thinned = true; }
+    }
+    const tableWork = workOf(sx.vals.length, sy.vals.length);
     let work = 0, over = false;
     /** @type {Map<string, LayerTable>} */ const tables = new Map();
     /** @param {number[]} mult @returns {LayerTable | null} */
@@ -585,8 +622,8 @@ function coneLayerPattern(cartonMM, bin, opt) {
       const key = mult.join(",");
       let t = tables.get(key);
       if (!t) {
+        if (work + tableWork > workLimit) { over = true; return null; }
         work += tableWork;
-        if (work > workLimit) { over = true; return null; }
         t = layerTable(cu, sx, sy, mult);
         tables.set(key, t);
       }
@@ -597,9 +634,14 @@ function coneLayerPattern(cartonMM, bin, opt) {
       const zr = z * unit * shrink;
       return [Math.floor(coneLen(bin, zr) / unit + 1e-9), Math.floor(coneWid(bin, zr) / unit + 1e-9)];
     };
-    /** @param {TreeNode | null} tree @returns {number[][]} Grundflächen, ab der Mitte der Lage gemessen */
+    /**
+     * @param {TreeNode | null} tree
+     * @returns {number[][] | null} Grundflächen, ab der Mitte der Lage gemessen; null bei sehr
+     *   vielen Kartons (dann wird die Auflage nicht geprüft und die Lage nur mit sich selbst gestapelt)
+     */
     const feet = (tree) => {
       if (!tree) return [];
+      if (layerLeaves(tree).reduce((acc, lf) => acc + lf.n[0] * lf.n[1], 0) > 4000) { over = true; return null; }
       const P = patternLayout({ kind: "T", root: tree }, c);
       let ex = 0, ey = 0;
       for (const q of P) { ex = Math.max(ex, q.x + q.dx); ey = Math.max(ey, q.y + q.dy); }
@@ -633,10 +675,11 @@ function coneLayerPattern(cartonMM, bin, opt) {
     let ops = 0;
     /**
      * Liegt jeder Karton der oberen Lage auf einem der unteren auf?
-     * @param {number[][]} lower @param {number[][]} upper @returns {boolean}
+     * @param {number[][] | null} lower @param {number[][] | null} upper @returns {boolean}
      */
     const rests = (lower, upper) => {
-      const s = CR_SUPPORT + 1e-6;
+      if (!lower || !upper) return false;
+      const s = sup + 1e-6;
       for (const u of upper) {
         let ok = false;
         for (const q of lower) {
@@ -656,13 +699,14 @@ function coneLayerPattern(cartonMM, bin, opt) {
       memo.set(key, null);
       const lo = flat(z, e);
       /** @type {Chain | null} */ let res = null;
-      if (lo && lo.cnt > 0 && !over) {
+      if (lo && lo.cnt > 0) {
         const rmax = Math.floor((Hu - z) / cu[e]);
         for (let r = rmax; r >= 1; r--) {
           const z2 = z + r * cu[e];
           const base = r * lo.cnt;
           if (!res || base > res.total) res = { total: base, r, next: null };
-          if (z2 + minE > Hu || ops > 4e6) continue;
+          if (z2 + minE > Hu) continue;
+          if (over || ops > 4e6 || memo.size > 4000) { over = true; continue; }
           let tw = tower(z2, cross(z2));
           if (tw && tw.cnt > 0 && !rests(lo.feet, tw.feet)) tw = tower(z2, cross(z));
           if (tw && tw.cnt > 0 && base + tw.cnt > res.total && rests(lo.feet, tw.feet)) res = { total: base + tw.cnt, r, next: { kind: "tower", opt: tw } };
@@ -680,10 +724,10 @@ function coneLayerPattern(cartonMM, bin, opt) {
     };
 
     const t0 = tower(0, cross(0));
-    if (over || !t0) continue;
+    if (!t0) continue;
     /** @type {TreeNode[]} */ let layers = t0.tree ? [t0.tree] : [];
     let count = t0.cnt;
-    if (count < enough && NZ.length <= 600) {
+    if (count < enough) {
       for (let e = 0; e < 3; e++) {
         if (e > 0 && cu[e] === cu[e - 1]) continue;
         const g = best(0, e);
@@ -704,10 +748,9 @@ function coneLayerPattern(cartonMM, bin, opt) {
         layers = ls; count = g.total;
       }
     }
-    if (over) continue;
     if (!layers.length) return null;
     const root = layers.length === 1 ? layers[0] : simplifyTree({ k: "S", a: 2, c: layers });
-    return { root, count: treeCount(root) };
+    return { root, count: treeCount(root), thinned: thinned || over, work, fullWork };
   }
   return null;
 }
@@ -731,33 +774,76 @@ function coneReduce(root, target, c, bin) {
   return layers.length === 1 ? layers[0] : simplifyTree({ k: "S", a: 2, c: layers });
 }
 
+/** Aufwand der schnellen Lagenmuster-Rechnung */
+const CONE_QUICK_WORK = 3e7;
+/** Bis zu so vielen Kartons (Obergrenze nach Volumen) läuft zusätzlich die Lagenrechnung aus cone.js mit Absenken und freier Suche */
+const CONE_HEAVY_MAX = 800;
+/** Bis zu so vielen Kartons enthält das Ergebnis jeden Karton einzeln; darüber nur das Lagenmuster */
+const CONE_LIST_MAX = 1500;
+/** Bis zu so vielen Kartons wird zum Lagenmuster die Regel abgeleitet */
+const CONE_RULE_MAX = 400;
+
 /**
- * Wie analyzeCone, nimmt aber das Lagenmuster, wenn es mindestens so viele Kartons schafft.
- * Dann gehört zum Ergebnis eine Regel; layers enthält die Textform des Lagenmusters.
+ * Jeder Block eines Lagenmusters als ein Quader (count = Kartons darin). Für die Zeichnung
+ * von Mustern mit sehr vielen Kartons.
+ * @param {TreeNode} root @param {number[]} c sortierter Karton @param {ConeBin} bin
+ * @returns {(ConePlacement & {count: number, n: number[]})[]}
+ */
+function coneBlockLayout(root, c, bin) {
+  /** @type {(ConePlacement & {count: number, n: number[]})[]} */ const out = [];
+  let z = 0;
+  for (const layer of coneLayersOf(root)) {
+    const B = layoutBlocks({ kind: "T", root: layer }, c);
+    let ex = 0, ey = 0, top = 0;
+    for (const q of B) { ex = Math.max(ex, q.x + q.dx); ey = Math.max(ey, q.y + q.dy); top = Math.max(top, q.z + q.dz); }
+    const ox = (bin.topL - ex) / 2, oy = (bin.topW - ey) / 2;
+    for (const q of B) out.push({ x: q.x + ox, y: q.y + oy, z: q.z + z, dx: q.dx, dy: q.dy, dz: q.dz, p: q.p, count: q.count, n: q.n });
+    z += top;
+  }
+  return out;
+}
+
+/**
+ * Bestes gefundenes Muster für einen Karton im konischen Bin.
+ * Schnell (budgetMs = 0): das Lagenmuster aus coneLayerPattern, bei nicht zu vielen Kartons
+ * zusätzlich die Lagenrechnung aus cone.js. Genau (budgetMs > 0): dazu verschränkte Lagen
+ * und die freie Suche. Das Lagenmuster gewinnt, wenn es mindestens so viele Kartons schafft;
+ * dann gehört zum Ergebnis eine Regel (layers enthält seine Textform).
  * @param {number[]} cartonMM @param {ConeBin} bin @param {number} budgetMs
  * @param {(a: ConeAnalysis) => void} [onStep] Zwischenergebnis
+ * @param {{symWork?: number}} [opt] symWork: Aufwand, den die Lagenmuster-Rechnung höchstens treibt
  * @returns {ConeAnalysis}
  */
-function analyzeConeLayers(cartonMM, bin, budgetMs, onStep) {
+function analyzeConeLayers(cartonMM, bin, budgetMs, onStep, opt) {
   const c = [...cartonMM].sort((a, b) => b - a);
-  /** @type {{count: number, placements: ConePlacement[], layers: string | null} | null} */ let sym = null;
-  const lp = c[2] >= 1 ? coneLayerPattern(c, bin, { workLimit: 3e7 }) : null;
+  const upperVol = Math.floor(coneVolume(bin) / (c[0] * c[1] * c[2]) + 1e-9);
+  const heavy = upperVol <= CONE_HEAVY_MAX;
+  const t0 = crNow();
+  const lp = c[2] >= 1 ? coneLayerPattern(c, bin, { workLimit: (opt && opt.symWork) || CONE_QUICK_WORK }) : null;
+  /** @type {DpEffort} */ const effort = { thinned: !!lp && lp.thinned, work: lp ? lp.work : 0, fullWork: lp ? lp.fullWork : 0, fullCells: 0, ms: crNow() - t0 };
+  /** @type {{count: number, placements: ConePlacement[], layers: string | null, rule: boolean} | null} */ let sym = null;
   if (lp) {
-    const placements = coneLayout(lp.root, c, bin);
-    // sehr große Muster: ohne Regel und ohne die aufwendige Einzelprüfung (der Aufbau selbst ist gültig)
-    const small = lp.count <= 400;
-    const rule = small ? coneRule(lp.root, bin, c) : null;
-    if ((!rule || (rule.ok && rowsHold(rule.rows, c, 1e-6))) && (placements.length > 4000 || !coneCheck(bin, placements).length)) {
-      sym = { count: placements.length, placements, layers: rule ? coneLayerString(lp.root, c) : null };
+    const listed = lp.count <= CONE_LIST_MAX;
+    const placements = listed ? coneLayout(lp.root, c, bin) : [];
+    const rule = lp.count <= CONE_RULE_MAX ? coneRule(lp.root, bin, c) : null;
+    if ((!rule || (rule.ok && rowsHold(rule.rows, c, 1e-6))) && (!listed || !coneCheck(bin, placements).length)) {
+      sym = { count: lp.count, placements, layers: coneLayerString(lp.root, c), rule: !!rule };
     }
   }
   /** @param {ConeAnalysis} a @returns {ConeAnalysis} */
   const merge = (a) => {
-    if (!sym || sym.count < a.count || (!sym.layers && sym.count === a.count)) return { ...a, layers: null };
+    const base = { ...a, approx: effort.thinned && a.status === "open", heavy, effort, layers: null, hasRule: false };
+    if (!sym || sym.count < a.count || (!sym.rule && sym.count === a.count && a.count > 0)) return base;
     const status = sym.count >= a.upper ? "optimal" : sym.count > a.count ? "open" : a.status;
-    return { ...a, count: sym.count, placements: sym.placements, source: "lagen", removed: 0, status, layers: sym.layers };
+    return { ...base, count: sym.count, placements: sym.placements, source: "lagen", removed: 0, status, approx: effort.thinned && status === "open", layers: sym.layers, hasRule: sym.rule };
   };
-  return merge(analyzeCone(c, bin, budgetMs, onStep ? (a) => onStep(merge(a)) : undefined));
+  if (heavy) return merge(analyzeCone(c, bin, budgetMs, onStep ? (a) => onStep(merge(a)) : undefined));
+  // sehr viele Kartons: nur das Lagenmuster, Obergrenze aus Volumen und Quader der Öffnung
+  const base = 0.1;
+  const cb = c.map((v) => Math.max(1, Math.round(v / base)));
+  const upperBox = upperBoundInt(cb, [bin.topL, bin.topW, coneHeight(bin)].map((v) => Math.floor(v / base + 1e-9)));
+  const upper = Math.min(upperVol, upperBox);
+  return merge({ carton: c, count: 0, upper, status: upper <= 0 ? "optimal" : "open", placements: [], source: "leer", removed: 0, bottomCuboid: 0, topCuboid: 0, final: true });
 }
 
 /* =========================================================================
@@ -773,11 +859,17 @@ function analyzeConeLayers(cartonMM, bin, budgetMs, onStep) {
  * Erzeugt Regeln "when … then N" für alle Kartons l >= w >= h in ganzen mm.
  * Ablauf wie im Quader-Bin: einfache Gitter am Boden als Start, dann Abtasten entlang
  * von Linien und Nachrechnen mit coneLayerPattern, zum Schluss aufräumen.
- * @param {ConeBin} bin @param {GenOptions & {workLimit?: number}} opt @param {(p: object) => void} [onProgress]
+ * Mit opt.res = 10 wird im cm-Raster gerechnet (Kartons in ganzen cm); die Regeln selbst
+ * stehen in mm und gelten für jeden Karton.
+ * @param {ConeBin} binMM @param {GenOptions & {workLimit?: number}} opt @param {(p: object) => void} [onProgress]
  */
-function generateConeRules(bin, opt, onProgress) {
+function generateConeRules(binMM, opt, onProgress) {
   const t0 = crNow();
   const nmax = opt.nmax;
+  const res = opt.res || 1;
+  /** @type {ConeBin} */ const bin = res === 1 ? binMM
+    : { topL: binMM.topL / res, topW: binMM.topW / res, rimH: binMM.rimH / res, botL: binMM.botL / res, botW: binMM.botW / res, coneH: binMM.coneH / res, unit: res };
+  const minH = 1 / res;
   const H = coneHeight(bin);
   const [M0, M1, M2] = [bin.topL, bin.topW, H].sort((a, b) => b - a).map((v) => Math.floor(v + 1e-9));
   /** @type {ConeGenRule[]} */ const rules = [];
@@ -1013,11 +1105,12 @@ function generateConeRules(bin, opt, onProgress) {
       stats.randomLines = li;
       continue;
     }
-    const s = /** @type {number} */ (pass.step);
+    const [s0, s1, s2] = gridSteps(/** @type {number} */ (pass.step), [M0, M1, M2]);
+    const s = s0 * res;
     /** @type {{k: number, fixed: number[], v0: number, v1: number}[]} */ const lines = [];
-    for (const h of gridVals(s, M2)) for (const w of gridVals(s, M1)) if (w >= h) lines.push({ k: 0, fixed: [0, w, h], v0: w, v1: M0 });
-    for (const h of gridVals(s, M2)) for (const l of gridVals(s, M0)) if (l >= h) lines.push({ k: 1, fixed: [l, 0, h], v0: h, v1: Math.min(l, M1) });
-    for (const w of gridVals(s, M1)) for (const l of gridVals(s, M0)) if (l >= w) lines.push({ k: 2, fixed: [l, w, 0], v0: 1, v1: Math.min(w, M2) });
+    for (const h of gridVals(s2, M2)) for (const w of gridVals(s1, M1)) if (w >= h) lines.push({ k: 0, fixed: [0, w, h], v0: w, v1: M0 });
+    for (const h of gridVals(s2, M2)) for (const l of gridVals(s0, M0)) if (l >= h) lines.push({ k: 1, fixed: [l, 0, h], v0: h, v1: Math.min(l, M1) });
+    for (const w of gridVals(s1, M1)) for (const l of gridVals(s0, M0)) if (l >= w) lines.push({ k: 2, fixed: [l, w, 0], v0: 1, v1: Math.min(w, M2) });
     for (let li = 0; li < lines.length; li++) {
       const L = lines[li];
       probeLine(L.k, L.fixed, L.v0, L.v1);
@@ -1035,7 +1128,7 @@ function generateConeRules(bin, opt, onProgress) {
   const ordered = [...rules].sort((a, b) => (b.score - a.score) || (a.rows.length - b.rows.length) || (a.count - b.count));
   /** @type {ConeGenRule[]} */ const kept = [];
   for (const r of ordered) {
-    r.verts = polyVertices(/** @type {Row[]} */ (r.rows).concat(coneDomainRows()));
+    r.verts = polyVertices(/** @type {Row[]} */ (r.rows).concat(coneDomainRows(minH)));
     if (!r.verts.length) continue;
     const V = r.verts;
     if (kept.some((k) => k.score >= r.score && V.every((v) => rowsHold(k.rows, v, 1e-7)))) continue;
@@ -1098,12 +1191,21 @@ function generateConeRules(bin, opt, onProgress) {
     }
   }
   const final = kept.filter((_, i) => mark[i]);
-  for (const r of final) r.example = coneExample(/** @type {number[][]} */ (r.verts), r.rows, r.ref);
+  for (const r of final) {
+    // zurück in mm: Konstanten der Bedingungen, Bezugs- und Beispielkarton
+    const ex = coneExample(/** @type {number[][]} */ (r.verts), r.rows, r.ref);
+    r.example = ex ? ex.map((v) => v * res) : null;
+    if (res !== 1) {
+      r.rows = r.rows.map((row) => crRow(row.p, row.n, row.b * res, row.kind));
+      r.ref = r.ref.map((v) => v * res);
+      r.verts = (r.verts || []).map((v) => v.map((x) => x * res));
+    }
+  }
   /** @param {number[] | null | undefined} c @returns {number} */
   const vol = (c) => (c ? c[0] * c[1] * c[2] : 0);
   final.sort((a, b) => (b.score - a.score) || (vol(b.example) - vol(a.example)));
   return {
-    bin, nmax, rules: final, stats,
+    bin: binMM, nmax, res, rules: final, stats,
     meta: { passes: opt.passes, aborted, elapsedMs: crNow() - t0, candidates: rules.length }
   };
 }
@@ -1119,10 +1221,58 @@ const CONE_QUALITY = {
   full: { label: "Gründlich", passes: [{ step: 40 }, { step: 20 }, { step: 10 }, { random: true, patience: 15000 }], maxMs: 2400000, workLimit: 6e7 }
 };
 
-/** @param {"fast" | "std" | "full"} quality @param {number} nmax @returns {GenOptions & {workLimit: number}} */
-function coneGenOptions(quality, nmax) {
+/**
+ * @param {"fast" | "std" | "full"} quality @param {number} nmax @param {number} [res] Raster in mm (1 oder 10)
+ * @param {number} [maxMs] Zeitlimit, wenn es von der Voreinstellung abweichen soll
+ * @returns {GenOptions & {workLimit: number}}
+ */
+function coneGenOptions(quality, nmax, res, maxMs) {
   const q = CONE_QUALITY[quality];
-  return { nmax, passes: q.passes, searchMs: 0, searchMaxCount: nmax, maxMs: q.maxMs, grow: true, workLimit: q.workLimit };
+  return { nmax, passes: q.passes, searchMs: 0, searchMaxCount: nmax, maxMs: maxMs || q.maxMs, grow: true, workLimit: q.workLimit, res: res || 1 };
+}
+
+/**
+ * Übliche Zahl der Löser-Aufrufe je Genauigkeit bei Höchstanzahl 30 (gemessen am Bin aus
+ * der Zeichnung). Grundlage der Zeitschätzung.
+ * @type {Record<"fast" | "std" | "full", number>}
+ */
+const CONE_GEN_CALLS = { fast: 52000, std: 140000, full: 165000 };
+
+/**
+ * Schätzt die Dauer der Regelerzeugung: misst den Lagenmuster-Löser an Stichproben und
+ * rechnet mit der üblichen Zahl der Aufrufe hoch. Die Schätzung ist grob (Faktor 2).
+ * @param {ConeBin} binMM @param {"fast" | "std" | "full"} quality @param {number} nmax @param {number} [res]
+ * @returns {{ms: number, solveMs: number}}
+ */
+function estimateConeRulesMs(binMM, quality, nmax, res) {
+  const r = res || 1;
+  /** @type {ConeBin} */ const bin = { topL: binMM.topL / r, topW: binMM.topW / r, rimH: binMM.rimH / r, botL: binMM.botL / r, botW: binMM.botW / r, coneH: binMM.coneH / r, unit: r };
+  const H = coneHeight(bin);
+  const [M0, M1, M2] = [bin.topL, bin.topW, H].sort((a, b) => b - a).map((v) => Math.floor(v + 1e-9));
+  const B0 = [coneLen(bin, 0), coneWid(bin, 0), H];
+  let seed = 4711;
+  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const t0 = crNow();
+  let n = -4, sum = 0;
+  // die ersten Messungen dienen nur dem Anlauf und zählen nicht
+  for (let i = 0; i < 6000 && n < 60 && crNow() - t0 < 2500; i++) {
+    const q = [1 + Math.floor(rand() * M0), 1 + Math.floor(rand() * M1), 1 + Math.floor(rand() * M2)].sort((a, b) => b - a);
+    let g = 0;
+    for (const p of CR_PERMS) g = Math.max(g, Math.floor(B0[0] / q[p[0]]) * Math.floor(B0[1] / q[p[1]]) * Math.floor(B0[2] / q[p[2]]));
+    // geprüft wird vor allem dort, wo schon viele Kartons passen
+    if (g < nmax / 4 || g >= nmax) continue;
+    const t1 = crNow();
+    coneLayerPattern(q, bin, { enough: nmax, workLimit: CONE_QUALITY[quality].workLimit });
+    if (n >= 0) sum += crNow() - t1;
+    n++;
+  }
+  const solveMs = n > 0 ? sum / n : 1;
+  // mehr Regeln bei höherer Höchstanzahl, weniger Aufrufe auf einem groben Raster
+  const f = Math.pow(nmax / 30, 1.4) * Math.min(1, Math.pow(M0 / 600, 0.8));
+  // Schlussprüfung: jede Linie (w, h) gegen die Regeln
+  const sweepMs = (M1 * M2 / 2) * 4500 * f * 2e-5;
+  // die Stichprobe trifft schwerere Fälle als der Lauf im Mittel, deshalb der Faktor
+  return { ms: f * CONE_GEN_CALLS[quality] * solveMs * 0.42 + sweepMs, solveMs };
 }
 
 /** @param {ConeBin} b @returns {string} z. B. "konisch-558x374x65-515x336x344" */
@@ -1131,8 +1281,8 @@ function coneBinKey(b) { return "konisch-" + [b.topL, b.topW, b.rimH].map(numTex
 /**
  * Gespeichertes Format einer Regelliste für den konischen Bin.
  * rules: [Anzahl gedeckelt, Kartons im Muster, Bedingungen flach [p0,p1,p2,n0,n1,n2,b,Art, …], Muster, Quelle]
- * @typedef {{cone: ConeBin, nmax: number, quality: string, rules: [number, number, number[], string, string][],
- *   stats?: object, meta?: object}} ConeRulesData
+ * @typedef {{cone: ConeBin, nmax: number, quality: string, res?: number, rules: [number, number, number[], string, string][],
+ *   stats?: object, meta?: {aborted?: boolean}}} ConeRulesData
  * @typedef {{score: number, count: number, rows: ConeRow[], pat: string, src: string}} ConeStoredRule
  */
 
@@ -1152,7 +1302,7 @@ function unpackRows(flat) {
 /** @param {ReturnType<typeof generateConeRules>} res @param {string} quality @returns {ConeRulesData} */
 function packConeRules(res, quality) {
   return {
-    cone: res.bin, nmax: res.nmax, quality,
+    cone: res.bin, nmax: res.nmax, quality, res: res.res,
     rules: res.rules.map((r) => [r.score, r.count, packRows(r.rows), coneLayerString(r.root, r.ref), r.src]),
     stats: res.stats, meta: res.meta
   };
@@ -1166,16 +1316,18 @@ function unpackConeRules(data) {
 /**
  * Regelliste als Text, eine Regel pro Zeile.
  * @param {ConeBin} bin @param {number} nmax @param {{score: number, rows: ConeRow[], pat: string}[]} rules @param {boolean} withPattern
+ * @param {string} [unit] Einheit der Maße in den Regeln ("mm", "cm" oder "m"); die Muster nennen ihren Karton immer in mm
  * @returns {string}
  */
-function coneRulesToText(bin, nmax, rules, withPattern) {
+function coneRulesToText(bin, nmax, rules, withPattern, unit = "mm") {
+  const L = (/** @type {number} */ v) => lenText(v, unit);
   const head = [
-    `# Regeln für den konischen Bin: Öffnung ${numText(bin.topL)} x ${numText(bin.topW)} mm mit ${numText(bin.rimH)} mm geradem Rand, Boden ${numText(bin.botL)} x ${numText(bin.botW)} mm, konischer Teil ${numText(bin.coneH)} mm hoch`,
-    "# Karton: l >= w >= h (längste, mittlere, kürzeste Kante). Es gilt die höchste Anzahl aller erfüllten Regeln.",
-    `# "then ${nmax}" bedeutet ${nmax} oder mehr.${withPattern ? " Hinter | steht das Packmuster." : ""}`
+    `# Regeln für den konischen Bin: Öffnung ${L(bin.topL)} x ${L(bin.topW)} ${unit} mit ${L(bin.rimH)} ${unit} geradem Rand, Boden ${L(bin.botL)} x ${L(bin.botW)} ${unit}, konischer Teil ${L(bin.coneH)} ${unit} hoch`,
+    `# Karton: l >= w >= h (längste, mittlere, kürzeste Kante), alle Maße in ${unit}. Es gilt die höchste Anzahl aller erfüllten Regeln.`,
+    `# "then ${nmax}" bedeutet ${nmax} oder mehr.${withPattern ? ` Hinter | steht das Packmuster${unit === "mm" ? "" : "; der Karton darin steht in mm"}.` : ""}`
   ];
   return head.concat(rules.map((r) => {
-    const t = coneRuleText(r.rows, Math.min(r.score, nmax));
+    const t = coneRuleText(r.rows, Math.min(r.score, nmax), unit);
     return withPattern ? `${t} | ${r.pat}` : t;
   })).join("\n") + "\n";
 }
@@ -1194,6 +1346,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     coneLayersOf, coneLayerError, coneDomainRows, layerSym, coneLayout, coneRule, rowsHold, pruneRows, coneExample, rowText, rowsText, coneRuleText,
     coneLayerString, parseConeAny, layerTable, coneLayerPattern, analyzeConeLayers, coneReduce, generateConeRules, CONE_QUALITY, coneGenOptions,
-    coneBinKey, packConeRules, unpackConeRules, coneRulesToText, lookupConeRules, packRows, unpackRows
+    coneBinKey, packConeRules, unpackConeRules, coneRulesToText, lookupConeRules, packRows, unpackRows,
+    coneBlockLayout, estimateConeRulesMs, CONE_QUICK_WORK, CONE_HEAVY_MAX, CONE_LIST_MAX, CONE_RULE_MAX
   };
 }

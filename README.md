@@ -8,16 +8,16 @@ Die Webseite in diesem Repository
 - lädt gespeicherte Packmuster aus ihrer Textform,
 - erzeugt für einen beliebigen Bin eine Regelliste im Format `when … then N`, jede Regel mit einem Packmuster als Beleg. Das geht für Quader-Bins und für konische Bins.
 
-Kartons dürfen beliebig gedreht werden, auch jeder Karton anders. Alle Maße sind Innenmaße in mm.
+Kartons dürfen beliebig gedreht werden, auch jeder Karton anders. Alle Maße sind Innenmaße und lassen sich in mm, cm oder m eingeben, bis 100 m je Maß. Gerechnet wird intern immer in mm.
 
-„Karton prüfen“ zeigt in beiden Reitern sofort eine schnelle Rechnung (nur Blockmuster). Der Knopf „Genau rechnen“ startet die Suche nach verschränkten Mustern, im Quader-Bin bis zu 6 Sekunden (`EXACT_MS` in `app.js`), im konischen Bin bis zu 8 Sekunden (`CONE_EXACT_MS` in `cone-app.js`).
+„Karton prüfen“ zeigt in beiden Reitern sofort eine schnelle Rechnung. Was nicht bewiesen optimal ist, ist als „ungefähr“ oder „offen“ gekennzeichnet und nennt die rechnerische Obergrenze. Für mehr Genauigkeit wählt man eine Stufe und startet „Genau rechnen“; neben jeder Stufe steht die erwartete Dauer. Siehe [Einheiten, große Bins und Genauigkeit](#einheiten-große-bins-und-genauigkeit).
 
 Die Seite hat zwei Reiter:
 
 - **Quader-Bin:** gerade Wände. Karton prüfen, Muster laden, Regelliste.
 - **Konischer Bin:** unten schmaler als oben, mit geradem Rand an der Öffnung. Karton prüfen, Muster laden, Regelliste. Siehe [Konischer Bin](#konischer-bin) und [Regeln für den konischen Bin](#regeln-für-den-konischen-bin).
 
-Für die Quader-Bins **603 × 403 × 404** und **603 × 403 × 312** und für den konischen Bin mit den Maßen aus der Zeichnung (Öffnung 558 × 374, Rand 65, Boden 515 × 336, konischer Teil 344) liegen fertige Regellisten in [`rules/`](rules/).
+Für die Quader-Bins **603 × 403 × 404**, **603 × 403 × 312** und **12100 × 2400 × 2700** (im cm-Raster) und für den konischen Bin mit den Maßen aus der Zeichnung (Öffnung 558 × 374, Rand 65, Boden 515 × 336, konischer Teil 344) liegen fertige Regellisten in [`rules/`](rules/).
 
 ## Schnellstart
 
@@ -33,6 +33,34 @@ Nach Änderungen an CSS oder JavaScript die Kennung `v=…` in `index.html` erh�
 
 Die beiden Werkzeuge in `tools/` brauchen nur Node.js 18 oder neuer, kein `npm install`.
 
+## Einheiten, große Bins und Genauigkeit
+
+**Einheiten.** Jede Maßgruppe (Bin, Karton) hat ihre eigene Eingabeeinheit: mm, cm oder m. Beim Umstellen werden die Zahlen umgerechnet, die Maße bleiben gleich. Ergebnisse, Positionen und Regeln stehen in der zuletzt gewählten Eingabeeinheit; die Knöpfe „Anzeige in“ stellen das jederzeit um. Auch die kopierten und gespeicherten Regeltexte stehen in der Anzeigeeinheit, die Kopfzeile der Datei nennt sie. Mustertexte für den konischen Bin (`K(…)`) nennen ihren Karton immer in mm.
+
+**Große Bins.** Der Rechenaufwand hängt nicht von der Größe des Bins ab, sondern vom Verhältnis Bin zu Karton und davon, wie „krumm“ die Kartonmaße sind: Der Löser probiert Schnitte an allen Summen von Kartonkanten, und davon gibt es auf 12 m mit einem Karton von 370 × 270 × 190 mm mehrere tausend je Achse. Die schnelle Rechnung hat deshalb ein festes Aufwandsbudget (`DP_QUICK_WORK` in `packcore.js`, `CONE_QUICK_WORK` in `cone-rules.js`). Reicht es nicht, dünnt sie die Schnittpositionen aus: Sie behält die Vielfachen einzelner Kanten, deren Gegenstücke vom Rand her und gleichmäßig verteilte weitere Summen. Das Muster bleibt gültig, ist aber nicht mehr unbedingt das beste. Das Ergebnis heißt dann „ungefähr: vereinfacht gerechnet“.
+
+| Karton im Bin 12,1 × 2,4 × 2,7 m | schnelle Rechnung | Obergrenze | Zeit |
+|---|---|---|---|
+| 1200 × 800 × 1000 mm | 78, optimal | 78 | unter 0,1 s |
+| 600 × 400 × 300 mm | 1088, Blockmuster vollständig | 1089 | unter 0,1 s |
+| 370 × 270 × 190 mm | 4103, ungefähr | 4130 | 0,2 s |
+| 615 × 425 × 317 mm | 909, ungefähr | 943 | 0,1 s |
+| 123 × 77 × 41 mm | 201.180, ungefähr | 201.920 | 0,2 s |
+
+**Genau rechnen.** Drei Stufen, jede mit geschätzter Dauer (gemessen an der letzten Rechnung im selben Browser):
+
+| Stufe | Quader-Bin (`EXACT_LEVELS` in `app.js`) | Konischer Bin (`CONE_EXACT_LEVELS` in `cone-app.js`) |
+|---|---|---|
+| Gründlich | Blockmuster mit 25-fachem Aufwand, Suche 6 s | Lagenmuster mit 10-fachem Aufwand, Suche 8 s |
+| Sehr gründlich | 750-facher Aufwand, Suche 30 s | 100-facher Aufwand, Suche 30 s |
+| Maximal | so viel, wie in den Speicher passt, Suche 2 min | 1000-facher Aufwand, Suche 2 min |
+
+Angeboten werden nur Stufen, die gegenüber dem vorliegenden Ergebnis noch etwas bringen können. Die Suche nach verschränkten Mustern gibt es im Quader-Bin bis 40 Kartons (`SEARCH_MAX_COUNT`), im konischen Bin, solange höchstens 800 Kartons in den Bin passen (`CONE_HEAVY_MAX`). Bei mehr Kartons bleibt offen, ob über das beste Block- oder Lagenmuster hinaus noch etwas geht; die Obergrenze zeigt, wie viel das höchstens wäre. Mehr Aufwand bringt bei großen Stückzahlen meist nur wenige Kartons: Im Beispiel 370 × 270 × 190 mm sind es 4105 statt 4103.
+
+**Zeichnung.** Ab 1500 Kartons (`DRAW_MAX`) zeigt die Zeichnung Blöcke gleich gedrehter Kartons statt jeden einzelnen, mit der Kartonzahl als Beschriftung.
+
+**Regellisten.** Siehe [Regeln erzeugen und prüfen](#regeln-erzeugen-und-prüfen): Raster 1 mm oder 1 cm, Zeitschätzung vor dem Start.
+
 ## Regeln lesen
 
 ```
@@ -40,7 +68,7 @@ when l+w<=403 and 4*h<=404 and 2*l+h<=603 and 4*w<=603 then 25 | Y(X(1x1x1:hwl,2
 ```
 
 - **l ≥ w ≥ h** sind die längste, mittlere und kürzeste Kante des Kartons. Kartonmaße müssen vor dem Auswerten so sortiert werden.
-- Die Zahlen rechts sind die Bin-Maße: Länge, Breite und Höhe in der Reihenfolge, in der der Bin angegeben ist.
+- Die Zahlen rechts sind die Bin-Maße: Länge, Breite und Höhe in der Reihenfolge, in der der Bin angegeben ist. Sie stehen in der Einheit der Liste (Kopfzeile der Textdatei); die Faktoren vor l, w und h haben keine Einheit. Kartonmaße müssen in derselben Einheit eingesetzt werden.
 - Erfüllt ein Karton mehrere Regeln, gilt die **höchste** Anzahl.
 - Die höchste Anzahl der Liste (Standard 30) bedeutet „so viele oder mehr“.
 - Hinter `|` steht das Packmuster, das die Regel belegt.
@@ -87,6 +115,7 @@ Stichproben mit `tools/validate-rules.js` für die mitgelieferten Listen (Genaui
 |---|---|---|---|---|
 | 603 × 403 × 404 | 1.558 | 1 von 10.000 | 2 von 1.500 | etwa 13 % der Kartons |
 | 603 × 403 × 312 | 2.060 | 3 von 10.000 | 7 von 1.500 | etwa 5 % der Kartons |
+| 12100 × 2400 × 2700, Raster 1 cm | 918 | – | 1 von 3.000 (60 ms) | etwa 3 % der Kartons |
 
 Alle Regeln wurden an der Ecke und an Zufallspunkten ihres Bereichs nachgebaut, ohne Überschneidung oder Überstand. Findet „Karton prüfen“ für einen Karton mehr als die Liste, lässt sich das Muster auf der Seite per Klick als Regel übernehmen. Solche Ergänzungen speichert die Seite im Browser.
 
@@ -112,15 +141,17 @@ Die Voreinstellung steht in `cone.js` als `CONE_DEFAULT`. Der Bin ist symmetrisc
 
 **Lösungsweg**
 
-1. **Lagen.** Der Bin wird waagerecht in Lagen geteilt. Jede Lage ist ein Quader mit dem Querschnitt an ihrer Unterkante und wird mit dem Quader-Löser gepackt, auch gemischt und verschränkt. Eine dynamische Programmierung über alle möglichen Höhen (Summen von Kartonkanten) wählt die beste Folge. Zwei Lagen werden nur kombiniert, wenn jeder Karton der oberen auf der unteren aufliegt. Bei gleicher Anzahl gewinnt die Folge mit der besseren Auflage.
-2. **Absenken und prüfen.** Die Lagen werden mittig gesetzt, jeder Karton fällt senkrecht bis zur Auflage. Das Ergebnis wird vollständig geprüft (Wände, Überschneidung, Auflage).
-3. **Freie Suche.** Eine Tiefensuche direkt im Konus versucht, einen Karton mehr unterzubringen, auch mit Mustern, die sich nicht in Lagen zerlegen lassen. Sie probiert Positionen, an denen Kartons bündig an einer Wand oder an anderen Kartons liegen.
+1. **Lagenmuster.** Zuerst rechnet `coneLayerPattern` (in `cone-rules.js`) das beste Lagenmuster, wie es auch die Regeln verwenden. Das geht auch bei sehr vielen Kartons schnell. Die folgenden Schritte laufen zusätzlich, solange höchstens 800 Kartons in den Bin passen; das bessere Ergebnis gewinnt, bei Gleichstand das Lagenmuster, weil es eine Regel hat.
+2. **Lagen.** Der Bin wird waagerecht in Lagen geteilt. Jede Lage ist ein Quader mit dem Querschnitt an ihrer Unterkante und wird mit dem Quader-Löser gepackt, auch gemischt und verschränkt. Eine dynamische Programmierung über alle möglichen Höhen (Summen von Kartonkanten) wählt die beste Folge. Zwei Lagen werden nur kombiniert, wenn jeder Karton der oberen auf der unteren aufliegt. Bei gleicher Anzahl gewinnt die Folge mit der besseren Auflage.
+3. **Absenken und prüfen.** Die Lagen werden mittig gesetzt, jeder Karton fällt senkrecht bis zur Auflage. Das Ergebnis wird vollständig geprüft (Wände, Überschneidung, Auflage).
+4. **Freie Suche.** Eine Tiefensuche direkt im Konus versucht, einen Karton mehr unterzubringen, auch mit Mustern, die sich nicht in Lagen zerlegen lassen. Sie probiert Positionen, an denen Kartons bündig an einer Wand oder an anderen Kartons liegen.
 
 **Wie sicher das Ergebnis ist**
 
 - *Optimal:* Eine rechnerische Obergrenze ist erreicht. Die Obergrenze nutzt, dass jede Unterkante auf einer Summe von Kartonkanten liegt und in jeder waagerechten Scheibe nur Summen von Kartonkanten nebeneinander passen.
 - *Vollständig durchsucht:* Die freie Suche hat alle bündigen Anordnungen mit einem Karton mehr durchprobiert und nichts gefunden.
 - *Offen:* Ein Karton mehr ist nicht ausgeschlossen.
+- *Ungefähr:* Schnelle oder vereinfachte Rechnung; die Obergrenze steht daneben.
 
 Im Vergleich mit einem exakten Löser (CP-SAT) an 24 Kartons mit 4 bis 12 Stück stimmte das Ergebnis in 18 von 19 entschiedenen Fällen überein, einmal lag es um einen Karton darunter. Der Fall war ein Muster, das sich nicht in Lagen zerlegen lässt.
 
@@ -138,7 +169,7 @@ Das ist ein freies Muster: zuerst die Kartonmaße, dann jeder Karton mit Lage un
 when l<=336 and 4*h<=336+0.1104*h and 4*w<=515+0.125*h and l+h<=409 and 1<=0.5*w and h+1<=0.5*l then 19 | K(295x131x86; Z(3x1x1:wlh,4x4x1:whl))
 ```
 
-Gelesen werden die Regeln wie beim Quader-Bin: l ≥ w ≥ h, es gilt die höchste Anzahl aller erfüllten Regeln, die höchste Anzahl der Liste heißt „so viele oder mehr“. Die Regeln gelten für Kartons ab 1 mm Kantenlänge und **nur für die Bin-Maße, mit denen sie berechnet wurden**. Die Seite rechnet immer mit den Maßen, die im Reiter eingestellt sind, und speichert die Liste unter genau diesen Maßen.
+Gelesen werden die Regeln wie beim Quader-Bin: l ≥ w ≥ h, es gilt die höchste Anzahl aller erfüllten Regeln, die höchste Anzahl der Liste heißt „so viele oder mehr“. In einer anderen Anzeigeeinheit werden nur die festen Längen umgerechnet, auch die 1 mm Auflage (in cm: `h+0.1<=0.5*l`). Die Regeln gelten für Kartons ab 1 mm Kantenlänge und **nur für die Bin-Maße, mit denen sie berechnet wurden**. Die Seite rechnet immer mit den Maßen, die im Reiter eingestellt sind, und speichert die Liste unter genau diesen Maßen.
 
 **Lagenmuster**
 
@@ -182,7 +213,17 @@ Die Liste kennt nur Lagenmuster. „Karton prüfen“ packt Lagen auch gemischt 
 
 ## Regeln erzeugen und prüfen
 
-Auf der Seite: Bin-Maße eintragen, Genauigkeit wählen, „Regeln berechnen“. Das läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text herunter. Das gilt für beide Reiter.
+Auf der Seite: Bin-Maße eintragen, Höchstanzahl (2 bis 200), Raster und Genauigkeit wählen, „Regeln berechnen“. Unter den Feldern steht die erwartete Dauer. Die Rechnung läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text herunter. Das gilt für beide Reiter.
+
+**Raster.** Mit „1 mm“ deckt die Liste alle Kartons in ganzen Millimetern ab, mit „1 cm“ alle in ganzen Zentimetern. Die Regeln selbst gelten in beiden Fällen für jeden Karton, das Raster bestimmt nur, wo der Rechner nach Mustern sucht. Für einen Karton mit krummen Maßen liefert eine cm-Liste im Quader-Bin mindestens die Anzahl des auf ganze cm aufgerundeten Kartons. Vorgewählt ist 1 mm bis 2 m größtes Bin-Maß, darüber 1 cm. Bei großen Bins ist das cm-Raster viel schneller: Im mm-Raster liegen die Prüfpunkte auf krummen Maßen, dort ist jede einzelne Rechnung teuer, und die Schlussprüfung hat hundertmal so viele Linien.
+
+**Zeitschätzung.** Vor dem Start misst die Seite die Löser-Rechnung an Stichproben für genau diesen Bin und rechnet mit der üblichen Zahl der Aufrufe hoch (`estimateRulesMs`, `estimateConeRulesMs`). Die Schätzung ist grob und kann um den Faktor 2 abweichen. Das Zeitlimit eines Laufs ist das der Genauigkeitsstufe, bei großen Bins das Vierfache der Schätzung. Wird es erreicht, steht das bei der Liste.
+
+Für den Bin 12100 × 2400 × 2700 mm im cm-Raster mit Höchstanzahl 30 dauerte „Standard“ in Node knapp 11 Minuten (892 Regeln, Schätzung 9 Minuten), „Gründlich“ knapp 21 Minuten (918 Regeln, Schätzung 15 Minuten).
+
+**Höchstanzahl und große Bins.** Die Liste unterscheidet Anzahlen nur bis zur Höchstanzahl. In einem Bin mit 78 m³ sagt sie bei Höchstanzahl 30 für alle Kartons unter etwa 2,6 m³ nur „30 oder mehr“. Für kleinere Kartons die Höchstanzahl erhöhen; der Aufwand wächst damit deutlich.
+
+**Schrittweite der Rasterlinien.** Die Angaben 40, 20 und 10 in der Tabelle unten gelten für einen Bin von etwa 600 × 400 × 400 mm. Für andere Größen rechnet `gridSteps` sie je Kante um, damit die Zahl der Linien ähnlich bleibt.
 
 Damit eine Liste für alle Besucher sofort da ist, wird sie ins Repository gelegt:
 
@@ -195,6 +236,9 @@ node tools/generate-rules.js 603 403 404 --quality full --txt regeln_603x403x404
 
 # Regelliste prüfen: Muster nachbauen und Stichprobe gegen den Löser
 node tools/validate-rules.js rules/603x403x404.json --samples 5000 --search-ms 100
+
+# großer Bin im cm-Raster (ab 2 m größtem Maß ohnehin vorgewählt)
+node tools/generate-rules.js 12100 2400 2700 --res 10 --quality std
 
 # Konischer Bin: Öffnung Länge, Breite, Randhöhe, dann Boden Länge, Breite, Höhe des konischen Teils
 node tools/generate-rules.js --cone 558 374 65 515 336 344 --quality full
@@ -211,9 +255,9 @@ Für den konischen Bin (ohne Suche nach verschränkten Lagen):
 
 | Genauigkeit | Ablauf | Dauer (Node, ein Kern) | Regeln, Bin aus der Zeichnung |
 |---|---|---|---|
-| `fast` | Raster 40 und 20 mm | etwa 45 Sekunden | 2.319 |
-| `std` | wie `fast`, dann Zufallslinien bis 1.000 Linien ohne neue Regel | etwa 3 Minuten | 4.423 |
-| `full` | Raster 40, 20 und 10 mm, dann Zufallslinien bis 15.000 Linien ohne neue Regel | etwa 4 Minuten | 4.661 |
+| `fast` | Raster 40 und 20 mm | etwa 50 Sekunden | etwa 2.600 |
+| `std` | wie `fast`, dann Zufallslinien bis 1.000 Linien ohne neue Regel | etwa 3 Minuten | etwa 4.500 |
+| `full` | Raster 40, 20 und 10 mm, dann Zufallslinien bis 15.000 Linien ohne neue Regel | etwa 4 Minuten | 4.661 (mitgelieferte Liste) |
 
 Die Seite lädt eine Liste aus `rules/` automatisch, sobald die passenden Bin-Maße eingestellt sind. Danach committen und pushen, fertig.
 
@@ -246,7 +290,7 @@ Format der Dateien in `rules/`:
 }
 ```
 
-Jede Regel ist `[Anzahl (gedeckelt auf nmax), Kartons im Muster, Bedingungen, Muster, Quelle]`. Die Bedingungen stehen flach in Vierergruppen `[a, b, c, Achse]` für `a*l + b*w + c*h <= Bin-Maß der Achse` (Achse 0 = Länge, 1 = Breite, 2 = Höhe). Die Quelle ist `grid`, `dp`, `search` oder `manual`.
+Alle Maße in den Dateien stehen in mm. `res` ist das Raster der Liste in mm (1 oder 10; fehlt es, gilt 1). Jede Regel ist `[Anzahl (gedeckelt auf nmax), Kartons im Muster, Bedingungen, Muster, Quelle]`. Die Bedingungen stehen flach in Vierergruppen `[a, b, c, Achse]` für `a*l + b*w + c*h <= Bin-Maß der Achse` (Achse 0 = Länge, 1 = Breite, 2 = Höhe). Die Quelle ist `grid`, `dp`, `search` oder `manual`.
 
 Listen für den konischen Bin heißen `konisch-<obenL>x<obenB>x<Rand>-<untenL>x<untenB>x<konischH>.json`. Statt `bin` steht dort `cone` mit den sechs Maßen (`topL`, `topW`, `rimH`, `botL`, `botW`, `coneH`). Die Bedingungen stehen flach in Achtergruppen `[p0, p1, p2, n0, n1, n2, b, Art]` für `(p0-n0)*l + (p1-n1)*w + (p2-n2)*h <= b`. `p` ist der Anteil, der in der Textform links steht, `n` der rechts; Art 0 = Wand, 1 = Höhe, 2 = Auflage.
 

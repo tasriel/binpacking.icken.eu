@@ -191,3 +191,16 @@ table.rules tr.hit td.rule::after { content: "gilt für deinen Karton"; display:
 .facts b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .codebox.one { grid-template-columns: 6.5rem minmax(0, 1fr) auto; }
 .codebox code.long { max-height: 6.2em; overflow-y: auto; }
+
+/* Einheiten und Stufen */
+.field.unitf select { font: 500 15px/1.2 var(--mono); padding: 10px 8px; }
+.p-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; }
+.disp-switch { display: inline-flex; align-items: center; gap: 0; font-size: 12.5px; }
+.disp-switch .lab { color: var(--muted); margin-right: 8px; }
+.disp-switch button { cursor: pointer; font: 500 12.5px var(--mono); color: var(--accent); background: var(--surface); border: 1px solid var(--accent); padding: 4px 10px; margin-left: -1px; }
+.disp-switch button:first-of-type { border-radius: 6px 0 0 6px; margin-left: 0; }
+.disp-switch button:last-of-type { border-radius: 0 6px 6px 0; }
+.disp-switch button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.disp-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; position: relative; }
+select.lvl { font: 500 12.5px var(--body); padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); max-width: 100%; }
+select.lvl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

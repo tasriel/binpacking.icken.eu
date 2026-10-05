@@ -38,13 +38,20 @@ if (typeof module !== "undefined" && typeof dpTable === "undefined") {
   var { dpTable, normalSet, portfolioSearch, dagFromPlacements, patternLayout, upperBoundInt } = require("./packcore.js");
 }
 
-/** @typedef {{topL: number, topW: number, rimH: number, botL: number, botW: number, coneH: number}} ConeBin */
+/**
+ * @typedef {{topL: number, topW: number, rimH: number, botL: number, botW: number, coneH: number, unit?: number}} ConeBin
+ *   unit: mm je Maßeinheit, wenn die Maße nicht in mm stehen (nur bei der Regelerzeugung im cm-Raster)
+ */
 /** @typedef {{x: number, y: number, z: number, dx: number, dy: number, dz: number, p: number[]}} ConePlacement */
 /**
  * @typedef {{carton: number[], count: number, upper: number, status: "optimal" | "searched" | "open",
  *   placements: ConePlacement[], source: "lagen" | "suche" | "leer", removed: number,
- *   bottomCuboid: number, topCuboid: number, final: boolean, layers?: string | null}} ConeAnalysis
- *   layers: Textform als Lagenmuster, wenn das Ergebnis eines ist (setzt cone-rules.js)
+ *   bottomCuboid: number, topCuboid: number, final: boolean, layers?: string | null, hasRule?: boolean,
+ *   approx?: boolean, heavy?: boolean, effort?: DpEffort}} ConeAnalysis
+ *   Die folgenden Felder setzt cone-rules.js (analyzeConeLayers):
+ *   layers: Textform als Lagenmuster, wenn das Ergebnis eines ist; hasRule: dazu gibt es eine Regel.
+ *   approx: vereinfacht gerechnet; heavy: die genaue Rechnung (Absenken, freie Suche) ist hier möglich.
+ *   Bei mehr als CONE_LIST_MAX Kartons ist placements leer; das Muster steht dann nur in layers.
  */
 
 const CONE_PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
@@ -55,6 +62,8 @@ const CONE_SUPPORT = 1;
 /** @returns {number} */
 const coneNow = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
+/** Größtes zulässiges Bin-Maß in mm (100 m) */
+const CONE_MAX_MM = 100000;
 /** Voreinstellung nach Zeichnung: Rand 558 x 374 x 65, Boden 515 x 336, konischer Teil 344 hoch */
 /** @type {ConeBin} */
 const CONE_DEFAULT = { topL: 558, topW: 374, rimH: 65, botL: 515, botW: 336, coneH: 344 };
@@ -111,8 +120,15 @@ function coneUpper(c, b) {
   const minE = Math.min(...cu);
   let zLast = 0;
   for (const z of NZ) if (z + minE <= Hu) zLast = z;
+  // bei sehr vielen Höhenstufen in einem großen Bin wäre diese Grenze zu aufwendig
+  if (NZ.length * (b.topL + b.topW) / u * dims.length > 3e8) return Infinity;
+  /** @type {Map<number, number>} */ const starMemo = new Map();
   /** @param {number} D @returns {number} größte Kantensumme, die in D passt */
-  const star = (D) => { const s = normalSet(Math.max(0, D), dims).vals; return s[s.length - 1]; };
+  const star = (D) => {
+    let v = starMemo.get(D);
+    if (v === undefined) { const s = normalSet(Math.max(0, D), dims).vals; v = s[s.length - 1]; starMemo.set(D, v); }
+    return v;
+  };
   let vol = 0;
   for (let i = 0; i + 1 < NZ.length; i++) {
     const z = Math.min(NZ[i], zLast) * u;
@@ -124,7 +140,7 @@ function coneUpper(c, b) {
 /** @param {ConeBin} b @returns {string | null} Fehlertext oder null */
 function coneBinError(b) {
   const vals = [b.topL, b.topW, b.rimH, b.botL, b.botW, b.coneH];
-  if (vals.some((v) => !isFinite(v) || v < 0 || v > 10000)) return "Bitte alle Bin-Maße als Zahlen zwischen 0 und 10000 mm eingeben.";
+  if (vals.some((v) => !isFinite(v) || v < 0 || v > CONE_MAX_MM)) return "Bitte alle Bin-Maße als Zahlen zwischen 0 und 100 m eingeben.";
   if (!(b.topL > 0 && b.topW > 0 && b.botL > 0 && b.botW > 0)) return "Länge und Breite müssen größer als 0 sein.";
   if (b.botL > b.topL + 1e-9 || b.botW > b.topW + 1e-9) return "Der Boden darf nicht größer sein als die Öffnung oben.";
   if (!(coneHeight(b) > 0)) return "Die Höhe (konischer Teil plus Rand) muss größer als 0 sein.";
@@ -766,6 +782,6 @@ function analyzeCone(cartonMM, bin, budgetMs, onStep) {
 if (typeof module !== "undefined") {
   module.exports = {
     CONE_DEFAULT, coneHeight, coneLen, coneWid, coneOffset, coneVolume, coneUpper, coneBinError, coneCheck, coneSettle,
-    coneString, parseCone, coneLayers, coneBuild, coneSearch, coneFreeSearch, coneMinSupport, analyzeCone, coneNum, CONE_SUPPORT
+    coneString, parseCone, coneLayers, coneBuild, coneSearch, coneFreeSearch, coneMinSupport, analyzeCone, coneNum, CONE_SUPPORT, CONE_MAX_MM
   };
 }
