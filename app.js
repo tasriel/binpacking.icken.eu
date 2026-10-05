@@ -590,7 +590,7 @@ function stepText(step, n, blocks) {
  */
 function boxListHtml(boxes, step, blocks) {
   if (boxes.length > 80) return "";
-  return boxes.map((p, i) => `<li class="${i >= step ? "later" : ""}"><span class="num">${i + 1}</span><span>${blocks ? `${p.n.join(" × ")} = ${p.count}, ${ORIENT[orient(p)].many}` : ORIENT[orient(p)].one}</span>
+  return boxes.map((p, i) => `<li class="${i >= step ? "later" : ""}"><span class="num">${i + 1}</span><span>${blocks ? `${p.n.join(" × ")} = ${p.count}, ${ORIENT[orient(p)].many}, je ${len(p.dx / p.n[0])} × ${len(p.dy / p.n[1])} × ${len(p.dz / p.n[2])}` : ORIENT[orient(p)].one}</span>
     <span class="pos">L ${len(p.x)}–${len(p.x + p.dx)} · B ${len(p.y)}–${len(p.y + p.dy)} · H ${len(p.z)}–${len(p.z + p.dz)} ${U()}</span></li>`).join("");
 }
 /** @param {number} step */
@@ -660,6 +660,77 @@ function depthOrder(items) {
   }
   return out;
 }
+/** In einer Richtung mit mehr Kartons zeichnet ein Block keine Trennlinien mehr (sie lägen zu dicht) */
+const GRID_MAX = 400;
+/**
+ * Trennlinien zwischen den Kartons eines Blocks auf seinen drei sichtbaren Flächen. So sind
+ * auch in der Blockansicht alle Kartons zu sehen, die außen liegen.
+ * @param {number[]} n Kartons je Achse @param {number[]} b Block [x0, x1, y0, y1, z0, z1]
+ * @param {(X: number, Y: number, Z: number) => number[]} P Projektion @returns {string}
+ */
+function blockGrid(n, b, P) {
+  const [x0, x1, y0, y1, z0, z1] = b;
+  /** @type {string[]} */ const d = [];
+  /** @param {number[]} a @param {number[]} c */
+  const seg = (a, c) => { const p = P(a[0], a[1], a[2]), q = P(c[0], c[1], c[2]); d.push(`M${p[0].toFixed(1)},${p[1].toFixed(1)}L${q[0].toFixed(1)},${q[1].toFixed(1)}`); };
+  if (n[0] <= GRID_MAX) for (let i = 1; i < n[0]; i++) { const x = x0 + (x1 - x0) * i / n[0]; seg([x, y0, z1], [x, y1, z1]); seg([x, y1, z0], [x, y1, z1]); }
+  if (n[1] <= GRID_MAX) for (let j = 1; j < n[1]; j++) { const y = y0 + (y1 - y0) * j / n[1]; seg([x0, y, z1], [x1, y, z1]); seg([x1, y, z0], [x1, y, z1]); }
+  if (n[2] <= GRID_MAX) for (let k = 1; k < n[2]; k++) { const z = z0 + (z1 - z0) * k / n[2]; seg([x1, y0, z], [x1, y1, z]); seg([x0, y1, z], [x1, y1, z]); }
+  return d.length ? `<path class="grid" d="${d.join("")}"/>` : "";
+}
+
+/* ---------- Großansicht mit Zoom ---------- */
+const zoom = { x: 0, y: 0, w: 1, h: 1, base: [0, 0, 1, 1], drag: /** @type {{px: number, py: number, x: number, y: number} | null} */ (null) };
+/** @returns {SVGSVGElement | null} */
+const zoomSvg = () => /** @type {SVGSVGElement | null} */ (document.querySelector("#zoom-box svg"));
+function zoomApply() {
+  const svg = zoomSvg();
+  if (svg) svg.setAttribute("viewBox", `${zoom.x} ${zoom.y} ${zoom.w} ${zoom.h}`);
+}
+/**
+ * Vergrößert oder verkleinert um einen Punkt (Anteile 0 … 1 der Ansicht).
+ * @param {number} f Faktor (kleiner als 1 = näher heran) @param {number} [fx] @param {number} [fy]
+ */
+function zoomBy(f, fx = 0.5, fy = 0.5) {
+  const w = Math.min(zoom.base[2] * 1.2, Math.max(zoom.base[2] / 200, zoom.w * f)), k = w / zoom.w;
+  zoom.x += (zoom.w - w) * fx; zoom.y += (zoom.h - zoom.h * k) * fy;
+  zoom.w = w; zoom.h *= k;
+  zoomApply();
+}
+/** @param {string} srcId Zeichnung, die groß gezeigt wird @param {string} title */
+function openZoom(srcId, title) {
+  const src = document.querySelector(`#${srcId} svg`);
+  if (!src) return;
+  $("#zoom-title").textContent = title;
+  $("#zoom-box").innerHTML = src.outerHTML;
+  const vb = (src.getAttribute("viewBox") || "0 0 1 1").split(/\s+/).map(Number);
+  zoom.base = vb; [zoom.x, zoom.y, zoom.w, zoom.h] = vb;
+  (/** @type {HTMLDialogElement} */ ($("#zoom-dlg"))).showModal();
+}
+document.addEventListener("click", (e) => {
+  const b = /** @type {HTMLElement | null} */ ((/** @type {HTMLElement} */ (e.target)).closest("[data-zoom]"));
+  if (b) openZoom(/** @type {string} */ (b.dataset.zoom), b.dataset.zoomTitle || "Packmuster");
+});
+$("#zoom-in").addEventListener("click", () => zoomBy(0.7));
+$("#zoom-out").addEventListener("click", () => zoomBy(1 / 0.7));
+$("#zoom-reset").addEventListener("click", () => { [zoom.x, zoom.y, zoom.w, zoom.h] = zoom.base; zoomApply(); });
+$("#zoom-close").addEventListener("click", () => (/** @type {HTMLDialogElement} */ ($("#zoom-dlg"))).close());
+$("#zoom-box").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = $("#zoom-box").getBoundingClientRect();
+  zoomBy(e.deltaY < 0 ? 0.85 : 1 / 0.85, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+}, { passive: false });
+$("#zoom-box").addEventListener("pointerdown", (e) => { zoom.drag = { px: e.clientX, py: e.clientY, x: zoom.x, y: zoom.y }; $("#zoom-box").setPointerCapture(e.pointerId); });
+$("#zoom-box").addEventListener("pointermove", (e) => {
+  if (!zoom.drag) return;
+  const r = $("#zoom-box").getBoundingClientRect();
+  // die Zeichnung füllt den Kasten so weit, wie ihr Seitenverhältnis erlaubt
+  const scale = Math.max(zoom.w / r.width, zoom.h / r.height);
+  zoom.x = zoom.drag.x - (e.clientX - zoom.drag.px) * scale; zoom.y = zoom.drag.y - (e.clientY - zoom.drag.py) * scale;
+  zoomApply();
+});
+for (const ev of ["pointerup", "pointercancel"]) $("#zoom-box").addEventListener(ev, () => { zoom.drag = null; });
+
 /**
  * Zeichnet den Bin mit Kartons. Mit cone wird der Bin konisch gezeichnet:
  * bin ist dann die Öffnung oben mit Gesamthöhe, cone der Boden und die Höhe des konischen Teils.
@@ -696,6 +767,7 @@ function drawSVG(bin, boxes, label, cone) {
       if (w >= d) { const t = Math.min(d * 0.14, 16), ym = (y0 + y1) / 2; s += `<polygon class="tape" points="${pts([[x0,ym - t/2,z1],[x1,ym - t/2,z1],[x1,ym + t/2,z1],[x0,ym + t/2,z1]])}"/>`; }
       else { const t = Math.min(w * 0.14, 16), xm = (x0 + x1) / 2; s += `<polygon class="tape" points="${pts([[xm - t/2,y0,z1],[xm + t/2,y0,z1],[xm + t/2,y1,z1],[xm - t/2,y1,z1]])}"/>`; }
     }
+    if (it.count > 1 && it.n) s += blockGrid(it.n, [x0, x1, y0, y1, z0, z1], P);
     if (showNum) { const c = P((x0 + x1) / 2, (y0 + y1) / 2, z1); s += `<text x="${c[0].toFixed(1)}" y="${(c[1] + fs * 0.35).toFixed(1)}" text-anchor="middle" style="font-size:${fs.toFixed(0)}px">${it.num}</text>`; }
     s += `</g>`;
   }

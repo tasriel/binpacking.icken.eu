@@ -57,7 +57,7 @@ Die beiden Werkzeuge in `tools/` brauchen nur Node.js 18 oder neuer, kein `npm i
 
 Angeboten werden nur Stufen, die gegenüber dem vorliegenden Ergebnis noch etwas bringen können. Die Suche nach verschränkten Mustern gibt es im Quader-Bin bis 40 Kartons (`SEARCH_MAX_COUNT`), im konischen Bin, solange höchstens 800 Kartons in den Bin passen (`CONE_HEAVY_MAX`). Bei mehr Kartons bleibt offen, ob über das beste Block- oder Lagenmuster hinaus noch etwas geht; die Obergrenze zeigt, wie viel das höchstens wäre. Mehr Aufwand bringt bei großen Stückzahlen meist nur wenige Kartons: Im Beispiel 370 × 270 × 190 mm sind es 4105 statt 4103.
 
-**Zeichnung.** Ab 1500 Kartons (`DRAW_MAX`) zeigt die Zeichnung Blöcke gleich gedrehter Kartons statt jeden einzelnen, mit der Kartonzahl als Beschriftung.
+**Zeichnung.** Ab 1500 Kartons (`DRAW_MAX`) zeigt die Zeichnung Blöcke gleich gedrehter Kartons statt jeden einzelnen, mit der Kartonzahl als Beschriftung. Trennlinien auf den sichtbaren Flächen zeigen die einzelnen Kartons im Block; die Liste daneben nennt je Block die Anzahl je Richtung und das Kartonmaß entlang Länge, Breite und Höhe. „Großansicht mit Zoom“ öffnet die Zeichnung in einem eigenen Fenster: Mausrad oder + und − vergrößern, Ziehen verschiebt.
 
 **Regellisten.** Siehe [Regeln erzeugen und prüfen](#regeln-erzeugen-und-prüfen): Raster 1 mm oder 1 cm, Zeitschätzung vor dem Start.
 

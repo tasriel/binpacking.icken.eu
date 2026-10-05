@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=2026-10-05.1">
+<link rel="stylesheet" href="style.css?v=2026-10-05.2">
 </head>
 <body>
 <div class="wrap">
@@ -87,7 +87,7 @@
       <span class="lab">Muster</span><code id="v-pat"></code><button type="button" class="btn small" data-copy="v-pat">Kopieren</button>
     </div>
     <div class="v-grid">
-      <div class="svgbox" id="v-svg"></div>
+      <div class="svgwrap"><div class="svgbox" id="v-svg"></div><button type="button" class="btn small" data-zoom="v-svg">Großansicht mit Zoom</button></div>
       <div class="side">
         <div class="legend" id="v-legend"></div>
         <div class="axis">L = Bin-Länge · B = Bin-Breite · H = Höhe · l ≥ w ≥ h sind die Kartonkanten · Maße in <span class="disp-unit">mm</span></div>
@@ -252,7 +252,7 @@
       <span class="lab">Muster</span><code class="long" id="cv-pat"></code><button type="button" class="btn small" data-copy="cv-pat">Kopieren</button>
     </div>
     <div class="v-grid">
-      <div class="svgbox" id="cv-svg"></div>
+      <div class="svgwrap"><div class="svgbox" id="cv-svg"></div><button type="button" class="btn small" data-zoom="cv-svg">Großansicht mit Zoom</button></div>
       <div class="side">
         <div class="legend" id="cv-legend"></div>
         <div class="axis">L und B ab der Ecke der oberen Öffnung, H ab dem Boden · l ≥ w ≥ h sind die Kartonkanten · Maße in <span class="disp-unit">mm</span></div>
@@ -348,13 +348,27 @@
   </div>
 </div>
 
+<dialog id="zoom-dlg" aria-labelledby="zoom-title">
+  <div class="zoom-head">
+    <h2 id="zoom-title">Packmuster</h2>
+    <div class="zoom-tools">
+      <button type="button" class="btn small" id="zoom-in" aria-label="Vergrößern">+</button>
+      <button type="button" class="btn small" id="zoom-out" aria-label="Verkleinern">−</button>
+      <button type="button" class="btn small" id="zoom-reset">Ganz zeigen</button>
+      <button type="button" class="btn small" id="zoom-close">Schließen</button>
+    </div>
+  </div>
+  <p class="note">Mausrad oder die Knöpfe + und − vergrößern, Ziehen verschiebt. Gezeigt wird der Stand der Packreihenfolge, der auf der Seite eingestellt ist.</p>
+  <div class="svgbox" id="zoom-box"></div>
+</dialog>
+
 <textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
 
 <!-- Nach jeder Änderung an CSS oder JavaScript die Kennung v=… überall in dieser Datei erhöhen, sonst zeigen Browser alte Dateien aus dem Zwischenspeicher. -->
-<script src="packcore.js?v=2026-10-05.1"></script>
-<script src="cone.js?v=2026-10-05.1"></script>
-<script src="cone-rules.js?v=2026-10-05.1"></script>
-<script src="app.js?v=2026-10-05.1"></script>
-<script src="cone-app.js?v=2026-10-05.1"></script>
+<script src="packcore.js?v=2026-10-05.2"></script>
+<script src="cone.js?v=2026-10-05.2"></script>
+<script src="cone-rules.js?v=2026-10-05.2"></script>
+<script src="app.js?v=2026-10-05.2"></script>
+<script src="cone-app.js?v=2026-10-05.2"></script>
 </body>
 </html>
