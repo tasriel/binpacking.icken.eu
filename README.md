@@ -281,6 +281,7 @@ Die Seite lädt eine Liste aus `rules/` automatisch, sobald die passenden Bin-Ma
 ```
 index.html            Seite
 style.css             Gestaltung, helles und dunkles Farbschema
+fonts/                Schriften (woff2, lokal) und fonts.css mit den @font-face-Regeln, kein Google Fonts
 favicon.svg           Icon der Seite; favicon.ico und apple-touch-icon.png sind daraus erzeugt
 app.js                Bedienung: Reiter, Quader-Bin, Zeichnung
 cone-app.js           Bedienung: Reiter „Konischer Bin“
@@ -323,3 +324,9 @@ git push -u origin main
 ```
 
 Liegt die Seite dort in einem Unterordner, funktionieren alle Pfade weiter, weil sie relativ sind.
+
+## Datenschutz
+
+- Die Seite lädt keine externen Ressourcen. Die Schriften (Barlow Condensed, IBM Plex Sans und Mono) liegen lokal in `fonts/`.
+- Eingaben (Bin-Maße, Einheiten, letzter Reiter, gespeicherte Regeln) bleiben im `localStorage` des Browsers.
+- Impressum und Datenschutzerklärung liegen zentral auf `start.icken.eu` und sind im Footer verlinkt. Kommt ein externer Dienst hinzu, muss die Datenschutzerklärung dort angepasst werden.
