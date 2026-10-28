@@ -220,3 +220,4 @@ dialog#zoom-dlg::backdrop { background: rgba(0, 0, 0, .55); }
 /* Fußzeile mit Links zu Impressum und Datenschutz */
 .site-footer { display: flex; gap: 16px; font-size: 13px; color: var(--muted); padding-top: 8px; }
 .site-footer a { color: inherit; }
+.site-version { margin-left: auto; }

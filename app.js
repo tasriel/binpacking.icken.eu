@@ -979,6 +979,16 @@ function markHit() {
 /* ---------- Reiter ---------- */
 /** @type {Record<string, () => void>} wird beim ersten Öffnen eines Reiters aufgerufen */
 const tabInit = {};
+
+/**
+ * Versionskennung der Seite, gelesen aus dem eigenen Script-Tag (app.js?v=…).
+ * So steht sie nur an einer Stelle: in index.html.
+ * @type {string}
+ */
+const SITE_VERSION = (() => {
+  const script = /** @type {HTMLScriptElement | null} */ (document.currentScript);
+  return script ? new URL(script.src).searchParams.get("v") || "" : "";
+})();
 /** @param {string} name "box" oder "cone" */
 function showTab(name) {
   for (const t of ["box", "cone"]) {
@@ -1001,6 +1011,7 @@ rerenderHooks.push(() => {
 
 (function init() {
   if (location.protocol === "file:") $("#file-note").hidden = false;
+  if (SITE_VERSION) { $("#site-version").textContent = "Version " + SITE_VERSION; $("#site-version").hidden = false; }
   bindUnitSelect("#bin-unit", ["#bin-l", "#bin-b", "#bin-h"]);
   bindUnitSelect("#ck-unit", ["#ck-a", "#ck-b", "#ck-c"]);
   const savedBin = restoreDims("quader-bin", ["#bin-l", "#bin-b", "#bin-h"], "#bin-unit");
