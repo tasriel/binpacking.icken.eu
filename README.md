@@ -213,7 +213,7 @@ Die Liste kennt nur Lagenmuster. „Karton prüfen“ packt Lagen auch gemischt 
 
 ## Regeln erzeugen und prüfen
 
-Auf der Seite: Bin-Maße eintragen, Höchstanzahl (2 bis 1000), Raster und Genauigkeit wählen, „Regeln berechnen“. Unter den Feldern steht die erwartete Dauer. Die Rechnung läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text herunter. Das gilt für beide Reiter.
+Auf der Seite: Bin-Maße eintragen, Höchstanzahl (2 bis 1000), Raster und Genauigkeit wählen, „Regeln berechnen“. Unter den Feldern steht die erwartete Dauer. Die Rechnung läuft im Hintergrund und wird nur im Browser gespeichert, getrennt für jede Kombination von Bin-Maßen. „Als Textdatei speichern“ lädt jede Liste als Text in der Anzeigeeinheit herunter. Der Dateiname nennt die Bin-Maße in mm und dahinter die Einheit des Inhalts, etwa `regeln_603x403x312_cm.txt`. Das gilt für beide Reiter.
 
 **Raster.** Mit „1 mm“ deckt die Liste alle Kartons in ganzen Millimetern ab, mit „1 cm“ alle in ganzen Zentimetern. Die Regeln selbst gelten in beiden Fällen für jeden Karton, das Raster bestimmt nur, wo der Rechner nach Mustern sucht. Für einen Karton mit krummen Maßen liefert eine cm-Liste im Quader-Bin mindestens die Anzahl des auf ganze cm aufgerundeten Kartons. Vorgewählt ist 1 mm bis 2 m größtes Bin-Maß, darüber 1 cm. Bei großen Bins ist das cm-Raster viel schneller: Im mm-Raster liegen die Prüfpunkte auf krummen Maßen, dort ist jede einzelne Rechnung teuer, und die Schlussprüfung hat hundertmal so viele Linien.
 

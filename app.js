@@ -959,7 +959,8 @@ $("#r-download").addEventListener("click", () => {
   const url = URL.createObjectURL(new Blob([exportText(true)], { type: "text/plain;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `regeln_${binKey(state.bin)}.txt`;
+  // Bin-Maße im Namen in mm, dahinter die Einheit des Inhalts
+  a.download = `regeln_${binKey(state.bin)}_${U()}.txt`;
   document.body.appendChild(a);
   a.click();
   a.remove();

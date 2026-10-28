@@ -671,7 +671,8 @@ $("#cr-download").addEventListener("click", () => {
   const url = URL.createObjectURL(new Blob([coneExportText(true)], { type: "text/plain;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `regeln_${coneBinKey(coneState.bin)}.txt`;
+  // Bin-Maße im Namen in mm, dahinter die Einheit des Inhalts
+  a.download = `regeln_${coneBinKey(coneState.bin)}_${U()}.txt`;
   document.body.appendChild(a);
   a.click();
   a.remove();
