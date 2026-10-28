@@ -4,7 +4,7 @@ Wie viele gleiche Kartons passen in einen Bin, und nach welchem Packmuster?
 
 Die Webseite in diesem Repository
 
-- prüft einen einzelnen Karton und zeigt das beste gefundene Packmuster als 3D-Skizze mit Packreihenfolge und Positionen in mm,
+- prüft einen einzelnen Karton und zeigt das beste gefundene Packmuster als 3D-Skizze mit Packreihenfolge und Positionen in der Anzeigeeinheit,
 - lädt gespeicherte Packmuster aus ihrer Textform,
 - erzeugt für einen beliebigen Bin eine Regelliste im Format `when … then N`, jede Regel mit einem Packmuster als Beleg. Das geht für Quader-Bins und für konische Bins.
 
@@ -35,7 +35,7 @@ Die beiden Werkzeuge in `tools/` brauchen nur Node.js 18 oder neuer, kein `npm i
 
 ## Einheiten, große Bins und Genauigkeit
 
-**Einheiten.** Jede Maßgruppe (Bin, Karton) hat ihre eigene Eingabeeinheit: mm, cm oder m. Beim Umstellen werden die Zahlen umgerechnet, die Maße bleiben gleich. Ergebnisse, Positionen und Regeln stehen in der zuletzt gewählten Eingabeeinheit; die Knöpfe „Anzeige in“ stellen das jederzeit um. Auch die kopierten und gespeicherten Regeltexte stehen in der Anzeigeeinheit, die Kopfzeile der Datei nennt sie. Mustertexte für den konischen Bin (`K(…)`) nennen ihren Karton immer in mm.
+**Einheiten.** Jede Maßgruppe (Bin, Karton) hat ihre eigene Eingabeeinheit: mm, cm oder m. Beim Umstellen werden die Zahlen umgerechnet, die Maße bleiben gleich. Ergebnisse, Positionen und Regeln stehen in der zuletzt gewählten Eingabeeinheit; die Knöpfe „Anzeige in“ stellen das jederzeit um. Auch die kopierten und gespeicherten Regeltexte stehen in der Anzeigeeinheit, die Kopfzeile der Datei nennt sie. Das gilt für alles mit einer Länge: Ergebnisse, Positionen, Regeln, Beispielkartons, Mustertexte für den konischen Bin (`K(…)`) und Hinweise wie „ragt oben 3,5 cm heraus“. Die gespeicherten Regeldateien (`rules/*.json`) stehen weiter in mm.
 
 **Große Bins.** Der Rechenaufwand hängt nicht von der Größe des Bins ab, sondern vom Verhältnis Bin zu Karton und davon, wie „krumm“ die Kartonmaße sind: Der Löser probiert Schnitte an allen Summen von Kartonkanten, und davon gibt es auf 12 m mit einem Karton von 370 × 270 × 190 mm mehrere tausend je Achse. Die schnelle Rechnung hat deshalb ein festes Aufwandsbudget (`DP_QUICK_WORK` in `packcore.js`, `CONE_QUICK_WORK` in `cone-rules.js`). Reicht es nicht, dünnt sie die Schnittpositionen aus: Sie behält die Vielfachen einzelner Kanten, deren Gegenstücke vom Rand her und gleichmäßig verteilte weitere Summen. Das Muster bleibt gültig, ist aber nicht mehr unbedingt das beste. Das Ergebnis heißt dann „ungefähr: vereinfacht gerechnet“.
 
@@ -161,7 +161,7 @@ Im Vergleich mit einem exakten Löser (CP-SAT) an 24 Kartons mit 4 bis 12 Stück
 K(360x236x128; whl@43,59,0; whl@279,59,0; whl@43,187,0; whl@279,187,0)
 ```
 
-Das ist ein freies Muster: zuerst die Kartonmaße, dann jeder Karton mit Lage und Ecke. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter `@` stehen x, y, z in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden. Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße. Lagenmuster haben eine eigene, kürzere Textform, siehe nächster Abschnitt.
+Das ist ein freies Muster: zuerst die Kartonmaße, dann jeder Karton mit Lage und Ecke. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter `@` stehen x, y, z der Ecke: x und y ab der Ecke der oberen Öffnung, z ab dem Boden. Ohne Einheit gelten mm. Steht hinter den Kartonmaßen `cm` oder `m`, etwa `K(36x23.6x12.8cm; hlw@2.15,5,0)`, gilt diese Einheit für alle Maße des Musters; Lagenmuster schreiben sie genauso hinter den Bezugskarton (`K(25.5x17.6x12cm; …)`). Die Seite schreibt Muster in der Anzeigeeinheit und liest alle drei Formen. Beim Laden prüft die Seite das Muster gegen die eingestellten Bin-Maße. Lagenmuster haben eine eigene, kürzere Textform, siehe nächster Abschnitt.
 
 ## Regeln für den konischen Bin
 

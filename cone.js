@@ -165,17 +165,18 @@ function coneInside(b, p, z, eps) {
 
 /**
  * Prüft ein fertiges Muster.
- * @param {ConeBin} b @param {ConePlacement[]} P @returns {string[]} Fehler (leer = gültig)
+ * @param {ConeBin} b @param {ConePlacement[]} P @param {string} [unit] Einheit der Maße in den Meldungen
+ * @returns {string[]} Fehler (leer = gültig)
  */
-function coneCheck(b, P) {
+function coneCheck(b, P, unit = "mm") {
   /** @type {string[]} */ const errs = [];
-  const f = (/** @type {number} */ v) => String(Math.round(v * 10) / 10).replace(".", ",");
+  const f = (/** @type {number} */ v) => conePatNum(v, unit).replace(".", ",") + " " + unit;
   P.forEach((p, i) => {
     if (p.z < -CONE_EPS) errs.push(`Karton ${i + 1} liegt unter dem Boden.`);
-    if (p.z + p.dz > coneHeight(b) + CONE_EPS) errs.push(`Karton ${i + 1} ragt oben ${f(p.z + p.dz - coneHeight(b))} mm heraus.`);
+    if (p.z + p.dz > coneHeight(b) + CONE_EPS) errs.push(`Karton ${i + 1} ragt oben ${f(p.z + p.dz - coneHeight(b))} heraus.`);
     const [ox, oy] = coneOffset(b, Math.max(0, p.z));
     const over = Math.max(ox - p.x, p.x + p.dx - (b.topL - ox), oy - p.y, p.y + p.dy - (b.topW - oy));
-    if (over > CONE_EPS) errs.push(`Karton ${i + 1} stößt in Höhe ${f(p.z)} mm um ${f(over)} mm durch die Wand.`);
+    if (over > CONE_EPS) errs.push(`Karton ${i + 1} stößt in Höhe ${f(p.z)} um ${f(over)} durch die Wand.`);
   });
   for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
     const a = P[i], c = P[j];
@@ -225,7 +226,35 @@ function coneSettle(b, P) {
 
 /* =========================================================================
  * Textform:  K(360x236x128; hlw@0,0,0; wlh@128,0,0)
+ * Ohne Einheit stehen die Maße in mm. Mit Einheit hinter den Kartonmaßen, etwa
+ * K(36x23.6x12.8cm; hlw@0,0,0), gelten cm bzw. m für alle Maße des Musters.
  * ========================================================================= */
+
+/** @type {Record<string, number>} mm je Einheit der Textform */
+const CONE_UNIT_MM = { mm: 1, cm: 10, m: 1000 };
+
+/**
+ * Länge für die Textform in der Einheit unit (Dezimalpunkt, auf 0,1 mm genau).
+ * @param {number} mm @param {string} [unit] "mm", "cm" oder "m" @returns {string}
+ */
+function conePatNum(mm, unit = "mm") {
+  const f = CONE_UNIT_MM[unit] || 1;
+  const scale = f === 1 ? 10 : f === 10 ? 100 : 10000;
+  return String(Math.round(mm / f * scale) / scale);
+}
+
+/**
+ * Liest Kartonmaße wie "360x236x128" oder "36x23.6x12.8cm".
+ * @param {string} text ohne Leerzeichen
+ * @returns {{carton: number[], f: number} | null} Maße in mm (sortiert) und mm je Einheit
+ */
+function parseConeDims(text) {
+  const m = /^(\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)(mm|cm|m)?$/i.exec(text);
+  if (!m) return null;
+  const f = CONE_UNIT_MM[(m[4] || "mm").toLowerCase()];
+  const carton = [m[1], m[2], m[3]].map((v) => Math.round(parseFloat(v.replace(",", ".")) * f * 10) / 10).sort((a, b) => b - a);
+  return { carton, f };
+}
 
 /** @param {number} v @returns {string} */
 function coneNum(v) {
@@ -234,12 +263,15 @@ function coneNum(v) {
 }
 
 /**
- * @param {number[]} carton sortiert l >= w >= h @param {ConePlacement[]} P @returns {string}
+ * @param {number[]} carton sortiert l >= w >= h @param {ConePlacement[]} P
+ * @param {string} [unit] Einheit aller Maße im Text ("mm", "cm" oder "m")
+ * @returns {string}
  */
-function coneString(carton, P) {
+function coneString(carton, P, unit = "mm") {
   const order = [...P].sort((p, q) => (p.z - q.z) || (p.y - q.y) || (p.x - q.x));
-  return "K(" + [carton.map(coneNum).join("x")].concat(order.map((p) =>
-    p.p.map((e) => CONE_EDGE[e]).join("") + "@" + [p.x, p.y, p.z].map(coneNum).join(","))).join("; ") + ")";
+  const num = (/** @type {number} */ v) => conePatNum(v, unit);
+  return "K(" + [carton.map(num).join("x") + (unit === "mm" ? "" : unit)].concat(order.map((p) =>
+    p.p.map((e) => CONE_EDGE[e]).join("") + "@" + [p.x, p.y, p.z].map(num).join(","))).join("; ") + ")";
 }
 
 /**
@@ -252,9 +284,11 @@ function parseCone(input) {
   const m = /^K\((.*)\)$/i.exec(s);
   if (!m) throw new Error("Ein Muster für den konischen Bin beginnt mit K( und endet mit ). Kartonlisten B(…) gehören in den Reiter „Quader-Bin“.");
   const items = m[1].split(";").filter(Boolean);
-  const dm = /^(\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)$/i.exec(items[0] || "");
-  if (!dm) throw new Error("Am Anfang müssen die Kartonmaße stehen, zum Beispiel 360x236x128.");
-  const carton = [dm[1], dm[2], dm[3]].map((v) => parseFloat(v.replace(",", "."))).sort((a, b) => b - a);
+  const dims = parseConeDims(items[0] || "");
+  if (!dims) throw new Error("Am Anfang müssen die Kartonmaße stehen, zum Beispiel 360x236x128 (mm) oder 36x23.6x12.8cm.");
+  const { carton, f } = dims;
+  // Position aus der Einheit des Textes in mm
+  const mm = (/** @type {string} */ v) => Math.round(+v * f * 1e6) / 1e6;
   if (carton.some((v) => !(v > 0))) throw new Error("Die Kartonmaße müssen größer als 0 sein.");
   if (items.length < 2) throw new Error("Nach den Kartonmaßen fehlt mindestens ein Karton, zum Beispiel hlw@0,0,0.");
   if (items.length > 5001) throw new Error("Höchstens 5000 Kartons in einem Muster.");
@@ -263,7 +297,7 @@ function parseCone(input) {
     if (!im) throw new Error(`Karton ${i + 1}: „${it}“ verstehe ich nicht. Erwartet wird Lage@x,y,z, zum Beispiel wlh@128,0,0 (Dezimalpunkt).`);
     const p = [...im[1].toLowerCase()].map((ch) => CONE_EDGE.indexOf(ch));
     if (p.includes(-1) || new Set(p).size !== 3) throw new Error(`Karton ${i + 1}: Die Lage „${im[1]}“ muss l, w und h je einmal enthalten.`);
-    return { x: +im[2], y: +im[3], z: +im[4], dx: carton[p[0]], dy: carton[p[1]], dz: carton[p[2]], p };
+    return { x: mm(im[2]), y: mm(im[3]), z: mm(im[4]), dx: carton[p[0]], dy: carton[p[1]], dz: carton[p[2]], p };
   });
   return { carton, placements };
 }
@@ -782,6 +816,7 @@ function analyzeCone(cartonMM, bin, budgetMs, onStep) {
 if (typeof module !== "undefined") {
   module.exports = {
     CONE_DEFAULT, coneHeight, coneLen, coneWid, coneOffset, coneVolume, coneUpper, coneBinError, coneCheck, coneSettle,
-    coneString, parseCone, coneLayers, coneBuild, coneSearch, coneFreeSearch, coneMinSupport, analyzeCone, coneNum, CONE_SUPPORT, CONE_MAX_MM
+    coneString, parseCone, coneLayers, coneBuild, coneSearch, coneFreeSearch, coneMinSupport, analyzeCone, coneNum, CONE_SUPPORT, CONE_MAX_MM,
+    conePatNum, parseConeDims
   };
 }

@@ -31,7 +31,7 @@ if (typeof module !== "undefined" && typeof coneLen === "undefined") {
   var { pruneTerms, addTerms, patternLayout, normalSet, parsePattern, patternString, numText, dot, reduceTree,
     polyVertices, simplifyTree, treeCount, termLE, layoutBlocks, upperBoundInt, gridSteps, lenText, genScale } = require("./packcore.js");
   // eslint-disable-next-line no-var
-  var { coneHeight, coneLen, coneWid, coneCheck, parseCone, coneNum, analyzeCone, coneVolume } = require("./cone.js");
+  var { coneHeight, coneLen, coneWid, coneCheck, parseCone, coneNum, analyzeCone, coneVolume, conePatNum, parseConeDims } = require("./cone.js");
 }
 
 /** @type {number[][]} */
@@ -434,10 +434,25 @@ function rowsKey(rows) { return rows.map((r) => r.a.map((v) => Math.round(v * 1e
 
 /**
  * Textform eines Lagenmusters: K(Bezugskarton; Blockbaum), z. B. K(255x176x120; Z(2x1x1:lwh,3x1x2:wlh)).
- * @param {TreeNode} root @param {number[] | null} ref @returns {string}
+ * In einer anderen Einheit als mm steht sie hinter dem Karton: K(25.5x17.6x12cm; …).
+ * @param {TreeNode} root @param {number[] | null} ref @param {string} [unit] "mm", "cm" oder "m"
+ * @returns {string}
  */
-function coneLayerString(root, ref) {
-  return "K(" + (ref ? ref.map(coneNum).join("x") + "; " : "") + patternString({ kind: "T", root }) + ")";
+function coneLayerString(root, ref, unit = "mm") {
+  const dims = ref ? ref.map((v) => conePatNum(v, unit)).join("x") + (unit === "mm" ? "" : unit) + "; " : "";
+  return "K(" + dims + patternString({ kind: "T", root }) + ")";
+}
+
+/**
+ * Schreibt eine Textform (Lagenmuster oder Kartonliste) in eine andere Einheit um.
+ * Unlesbare Texte bleiben, wie sie sind.
+ * @param {string} text @param {string} unit @returns {string}
+ */
+function conePatternIn(text, unit) {
+  try {
+    const p = parseConeAny(text);
+    return p.kind === "layers" ? coneLayerString(p.root, p.ref, unit) : coneString(p.carton, p.placements, unit);
+  } catch (e) { return text; }
 }
 
 /**
@@ -465,9 +480,9 @@ function parseConeAny(input) {
       if (parts.length > 2) throw new Error("Ein Lagenmuster hat die Form K(Karton; Z(…)), zum Beispiel K(255x176x120; Z(2x1x1:lwh,3x1x2:wlh)).");
       tree = parts[parts.length - 1];
       if (parts.length === 2) {
-        const dm = /^(\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)$/i.exec(parts[0]);
-        if (!dm) throw new Error("Vor dem Lagenmuster stehen die Maße des Bezugskartons, zum Beispiel 255x176x120.");
-        ref = [dm[1], dm[2], dm[3]].map((v) => parseFloat(v.replace(",", "."))).sort((a, b) => b - a);
+        const dims = parseConeDims(parts[0]);
+        if (!dims) throw new Error("Vor dem Lagenmuster stehen die Maße des Bezugskartons, zum Beispiel 255x176x120 (mm) oder 25.5x17.6x12cm.");
+        ref = dims.carton;
         if (ref.some((v) => !(v > 0))) throw new Error("Die Kartonmaße müssen größer als 0 sein.");
       }
     }
@@ -1323,10 +1338,11 @@ function coneRulesToText(bin, nmax, rules, withPattern, unit = "mm") {
   const head = [
     `# Regeln für den konischen Bin: Öffnung ${L(bin.topL)} x ${L(bin.topW)} ${unit} mit ${L(bin.rimH)} ${unit} geradem Rand, Boden ${L(bin.botL)} x ${L(bin.botW)} ${unit}, konischer Teil ${L(bin.coneH)} ${unit} hoch`,
     `# Karton: l >= w >= h (längste, mittlere, kürzeste Kante), alle Maße in ${unit}. Es gilt die höchste Anzahl aller erfüllten Regeln.`,
-    `# "then ${nmax}" bedeutet ${nmax} oder mehr.${withPattern ? ` Hinter | steht das Packmuster${unit === "mm" ? "" : "; der Karton darin steht in mm"}.` : ""}`
+    `# "then ${nmax}" bedeutet ${nmax} oder mehr.${withPattern ? " Hinter | steht das Packmuster." : ""}`
   ];
   return head.concat(rules.map((r) => {
     const t = coneRuleText(r.rows, Math.min(r.score, nmax), unit);
+    if (withPattern && unit !== "mm") return `${t} | ${conePatternIn(r.pat, unit)}`;
     return withPattern ? `${t} | ${r.pat}` : t;
   })).join("\n") + "\n";
 }
@@ -1344,7 +1360,7 @@ function lookupConeRules(rules, c) {
 if (typeof module !== "undefined") {
   module.exports = {
     coneLayersOf, coneLayerError, coneDomainRows, layerSym, coneLayout, coneRule, rowsHold, pruneRows, coneExample, rowText, rowsText, coneRuleText,
-    coneLayerString, parseConeAny, layerTable, coneLayerPattern, analyzeConeLayers, coneReduce, generateConeRules, CONE_QUALITY, coneGenOptions,
+    coneLayerString, conePatternIn, parseConeAny, layerTable, coneLayerPattern, analyzeConeLayers, coneReduce, generateConeRules, CONE_QUALITY, coneGenOptions,
     coneBinKey, packConeRules, unpackConeRules, coneRulesToText, lookupConeRules, packRows, unpackRows,
     coneBlockLayout, estimateConeRulesMs, CONE_QUICK_WORK, CONE_HEAVY_MAX, CONE_LIST_MAX, CONE_RULE_MAX
   };

@@ -9,8 +9,8 @@
 <link rel="icon" href="favicon.ico" sizes="48x48">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="fonts/fonts.css?v=2026-10-12.1">
-<link rel="stylesheet" href="style.css?v=2026-10-12.1">
+<link rel="stylesheet" href="fonts/fonts.css?v=2026-10-28.1">
+<link rel="stylesheet" href="style.css?v=2026-10-28.1">
 </head>
 <body>
 <div class="wrap">
@@ -319,7 +319,7 @@
       <li><b>Wand.</b> Eine Lage, deren Unterkante in der Höhe z liegt, darf so lang sein wie der Bin dort: Bodenlänge plus Steigung mal z. Die Höhe z ist die Summe der Lagen darunter. So entstehen Bedingungen wie <code>3*w&lt;=515+0.125*h</code>: Drei Kartons mit w nebeneinander passen, wenn die Lage auf einer Lage der Höhe h steht. Reicht eine Lage in den geraden Rand, kommt die Bedingung mit dem Maß der Öffnung dazu, etwa <code>3*w&lt;=558</code>.</li>
       <li><b>Höhe.</b> Die Summe aller Lagenhöhen bleibt unter der Gesamthöhe, zum Beispiel <code>l+h&lt;=409</code>.</li>
       <li><b>Auflage.</b> Jeder Karton einer oberen Lage liegt mindestens 1 mm auf einem Karton darunter. Daraus werden Bedingungen wie <code>0.5*w+1&lt;=l</code>. Der Faktor 0.5 kommt daher, dass die Lagen mittig liegen.</li>
-      <li><b>Einheit.</b> Die festen Längen in den Regeln stehen in der Einheit der Anzeige, die Faktoren vor l, w und h haben keine Einheit. In cm wird aus <code>h+1&lt;=0.5*l</code> also <code>h+0.1&lt;=0.5*l</code>. Mustertexte nennen ihren Karton immer in mm.</li>
+      <li><b>Einheit.</b> Die festen Längen in den Regeln stehen in der Einheit der Anzeige, die Faktoren vor l, w und h haben keine Einheit. In cm wird aus <code>h+1&lt;=0.5*l</code> also <code>h+0.1&lt;=0.5*l</code>. Auch Mustertexte, Positionen und Hinweise folgen der Anzeigeeinheit.</li>
       <li><b>Gerundete Zahlen.</b> In der Textform stehen höchstens vier Nachkommastellen. Gerundet wird immer so, dass die Bedingung dadurch strenger wird, nie lockerer.</li>
       <li><b>Entstehung.</b> Wie im Reiter „Quader-Bin“: Start mit einfachen Gittern am Boden, dann Abtasten entlang von Linien. An jeder Stelle, an der die Anzahl laut Liste sinkt, sucht der Rechner das beste Lagenmuster und nimmt es als Regel auf.</li>
       <li><b>Verlässlichkeit.</b> Jede Regel ist durch ihr Muster belegt, sie zeigt also nie zu viel. Die Liste kennt nur Lagenmuster. „Karton prüfen“ findet mit verschränkten Lagen und der freien Suche gelegentlich einen Karton mehr. Ist das gefundene Muster ein Lagenmuster, lässt es sich per Klick als Regel übernehmen.</li>
@@ -339,7 +339,7 @@
     <ul>
       <li><code>K(295x131x86; Z(3x1x1:wlh,4x4x1:whl))</code> ist ein Lagenmuster. Zuerst steht ein Karton, für den das Muster passt, dann die Lagen von unten nach oben in <code>Z(…)</code>. <code>3x1x1:wlh</code> ist ein Block wie im Reiter „Quader-Bin“: 3 Kartons entlang der Länge, 1 entlang der Breite, 1 hoch; w liegt entlang der Länge, l entlang der Breite, h zeigt nach oben. Innerhalb einer Lage legen <code>X(…)</code> und <code>Y(…)</code> Blöcke nebeneinander. Besteht das Muster aus einer einzigen Lage, entfällt <code>Z(…)</code>.</li>
       <li>Beim Laden eines Lagenmusters rechnet die Seite die Regel für den eingestellten Bin neu aus und zeigt das Muster mit deinem Karton, wenn er passt.</li>
-      <li><code>K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)</code> ist ein freies Muster ohne Regel. Es nennt zuerst die Kartonmaße, dann jeden Karton mit Lage und Position. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter <code>@</code> stehen x, y und z der Ecke in mm: x und y ab der Ecke der oberen Öffnung, z ab dem Boden.</li>
+      <li><code>K(360x236x128; hlw@21.5,50,0; hlw@149.5,50,0)</code> ist ein freies Muster ohne Regel. Es nennt zuerst die Kartonmaße, dann jeden Karton mit Lage und Position. Die drei Buchstaben sagen, welche Kartonkante entlang Länge, Breite und Höhe liegt. Hinter <code>@</code> stehen x, y und z der Ecke: x und y ab der Ecke der oberen Öffnung, z ab dem Boden. Ohne Einheit gelten mm; steht hinter den Kartonmaßen <code>cm</code> oder <code>m</code>, etwa <code>K(36x23.6x12.8cm; hlw@2.15,5,0)</code>, gilt diese Einheit für alle Maße des Musters. Die Seite schreibt Muster in der Anzeigeeinheit und liest jede der drei Formen.</li>
       <li>Beim Laden eines freien Musters prüft die Seite es gegen die eingestellten Bin-Maße und meldet, wenn ein Karton durch die Wand stößt, einen anderen schneidet oder nirgends aufliegt.</li>
     </ul>
   </section>
@@ -367,10 +367,10 @@
 <textarea id="copy-area" aria-hidden="true" tabindex="-1" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0"></textarea>
 
 <!-- Nach jeder Änderung an CSS oder JavaScript die Kennung v=… überall in dieser Datei erhöhen, sonst zeigen Browser alte Dateien aus dem Zwischenspeicher. -->
-<script src="packcore.js?v=2026-10-12.1"></script>
-<script src="cone.js?v=2026-10-12.1"></script>
-<script src="cone-rules.js?v=2026-10-12.1"></script>
-<script src="app.js?v=2026-10-12.1"></script>
-<script src="cone-app.js?v=2026-10-12.1"></script>
+<script src="packcore.js?v=2026-10-28.1"></script>
+<script src="cone.js?v=2026-10-28.1"></script>
+<script src="cone-rules.js?v=2026-10-28.1"></script>
+<script src="app.js?v=2026-10-28.1"></script>
+<script src="cone-app.js?v=2026-10-28.1"></script>
 </body>
 </html>

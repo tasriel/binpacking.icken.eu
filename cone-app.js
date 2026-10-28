@@ -10,7 +10,7 @@
 /**
  * @typedef {ConePlacement & {count?: number, n?: number[], num?: number}} ConeItem  Karton oder Block (count = Kartons darin)
  * @typedef {{kind: "check" | "loaded" | "rule", carton: number[] | null, items: ConeItem[], blocks: boolean, total: number,
- *   eyebrow: string, note: string, rule: {rows: ConeRow[], count: number} | null, noRule: string, patText: string | null,
+ *   eyebrow: string, note: string | (() => string), rule: {rows: ConeRow[], count: number} | null, noRule: string, patText: string | null,
  *   boxes?: ConeItem[]}} ConeView
  *   blocks: items sind Blöcke statt einzelner Kartons. noRule: warum es keine Regel gibt.
  * @typedef {ConeStoredRule & {example: number[] | null, id: number, root: TreeNode, ref: number[] | null}} ConeUiRule
@@ -421,19 +421,20 @@ function coneViolated(rows, c) {
  * @param {string} patText @param {string} eyebrow @param {"loaded" | "rule"} kind
  */
 function showConeLayers(root, rows, count, example, patText, eyebrow, kind) {
-  let carton = coneState.carton, note = "";
-  if (!carton || carton[2] < 1 || !rowsHold(rows, carton, 1e-7)) {
-    if (!example) { note = "Mit diesem Bin passt das Muster für keinen Karton."; carton = null; }
-    else {
-      if (carton) note = `Dein Karton ${dimsText(carton)} ${U()} passt nicht in dieses Muster (verletzt: ${coneViolated(rows, carton)}). Gezeigt mit dem größten passenden Karton ${dimsText(example)} ${U()}.`;
-      carton = example;
-    }
-  }
+  const own = coneState.carton;
+  let carton = own, misfit = false;
+  if (!carton || carton[2] < 1 || !rowsHold(rows, carton, 1e-7)) { misfit = !!carton; carton = example; }
   const it = carton ? coneItems(root, carton) : { items: [], blocks: false, total: count };
-  if (carton) {
-    const problems = coneCheck(coneState.bin, [...it.items].sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x)));
-    if (problems.length) note = `${note ? note + " " : ""}Achtung: ${problems.slice(0, 2).join(" ")}`;
-  }
+  const sorted = [...it.items].sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x));
+  const bin = coneState.bin, shown = carton;
+  // Hinweis erst beim Anzeigen bauen, damit er der aktuellen Anzeigeeinheit folgt
+  const note = () => {
+    if (!shown) return "Mit diesem Bin passt das Muster für keinen Karton.";
+    let t = misfit && own ? `Dein Karton ${dimsText(own)} ${U()} passt nicht in dieses Muster (verletzt: ${coneViolated(rows, own)}). Gezeigt mit dem größten passenden Karton ${dimsText(shown)} ${U()}.` : "";
+    const problems = coneCheck(bin, sorted, U());
+    if (problems.length) t = `${t ? t + " " : ""}Achtung: ${problems.slice(0, 2).join(" ")}`;
+    return t;
+  };
   coneState.view = { kind, carton, items: it.items, blocks: it.blocks, total: it.total, eyebrow, note, rule: { rows, count }, noRule: "", patText };
   coneState.step = null;
   renderConeViewer();
@@ -471,10 +472,15 @@ $("#cc-load-btn").addEventListener("click", () => {
       items = it.items; blocks = it.blocks; total = it.total;
       patText = coneLayerString(parsed.root, carton); noRule = NO_RULE_BIG;
     } else { items = parsed.placements; carton = parsed.carton; total = items.length; }
-    const problems = items.length <= 5000 ? coneCheck(coneState.bin, [...items].sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x))) : [];
-    const note = problems.length
-      ? `Dieses Muster passt nicht zu den eingestellten Bin-Maßen: ${problems.slice(0, 3).join(" ")}${problems.length > 3 ? ` und ${problems.length - 3} weitere Probleme.` : ""}`
-      : "";
+    const sorted = items.length <= 5000 ? [...items].sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x)) : [];
+    const bin = coneState.bin;
+    // Hinweis erst beim Anzeigen bauen, damit er der aktuellen Anzeigeeinheit folgt
+    const note = () => {
+      const problems = coneCheck(bin, sorted, U());
+      return problems.length
+        ? `Dieses Muster passt nicht zu den eingestellten Bin-Maßen: ${problems.slice(0, 3).join(" ")}${problems.length > 3 ? ` und ${problems.length - 3} weitere Probleme.` : ""}`
+        : "";
+    };
     coneState.view = { kind: "loaded", carton, items, blocks, total, eyebrow: "Geladenes Muster", note, rule: null, noRule, patText };
     coneState.step = null;
     renderConeViewer();
@@ -485,16 +491,20 @@ $("#cc-load-btn").addEventListener("click", () => {
 });
 $("#cv-back").addEventListener("click", () => showConeCheck());
 
+/** @param {ConeView} v @returns {string} Hinweis zur Ansicht in der aktuellen Anzeigeeinheit */
+function noteText(v) { return typeof v.note === "function" ? v.note() : v.note; }
+
 function renderConeViewer() {
   const v = coneState.view;
   $("#cv-back").hidden = !v || v.kind === "check" || !coneState.carton;
   if (!v || !v.carton) {
     $("#cv-eyebrow").textContent = "Packmuster";
-    $("#cv-title").textContent = v && v.note ? "Kein Karton passt" : "Noch kein Muster";
-    $("#cv-meta").textContent = v && v.note ? "" : "Sobald Maße eingegeben sind und mindestens ein Karton passt, erscheint hier das Muster.";
-    $("#cv-note").hidden = !(v && v.note); if (v && v.note) $("#cv-note").textContent = v.note;
+    const vn = v ? noteText(v) : "";
+    $("#cv-title").textContent = vn ? "Kein Karton passt" : "Noch kein Muster";
+    $("#cv-meta").textContent = vn ? "" : "Sobald Maße eingegeben sind und mindestens ein Karton passt, erscheint hier das Muster.";
+    $("#cv-note").hidden = !vn; if (vn) $("#cv-note").textContent = vn;
     $("#cv-rule").textContent = v && v.rule ? coneRuleText(v.rule.rows, v.rule.count, U()) : "–";
-    $("#cv-pat").textContent = v && v.patText ? v.patText : "–";
+    $("#cv-pat").textContent = v && v.patText ? conePatternIn(v.patText, U()) : "–";
     $("#cv-svg").innerHTML = drawConeSVG([]);
     $("#cv-legend").innerHTML = ""; $("#cv-list").innerHTML = ""; $("#cv-stepper").hidden = true;
     return;
@@ -505,9 +515,11 @@ function renderConeViewer() {
   $("#cv-eyebrow").textContent = v.eyebrow;
   $("#cv-title").innerHTML = `${v.total} ${v.total === 1 ? "Karton" : "Kartons"} <span class="u">à ${dimsText(v.carton)} ${U()}</span>`;
   $("#cv-meta").innerHTML = `<b>${v.patText ? "Lagenmuster" : "Freies Muster"}</b>${n ? ` · ${orientSummary(boxes)} · Ebenen: ${coneLevels(boxes)}` : ""}${v.blocks ? ` · Zeichnung zeigt ${n === 1 ? "einen Block" : n + " Blöcke"} statt einzelner Kartons` : ""}`;
-  $("#cv-note").hidden = !v.note; $("#cv-note").textContent = v.note;
+  const vn = noteText(v);
+  $("#cv-note").hidden = !vn; $("#cv-note").textContent = vn;
   $("#cv-rule").textContent = v.rule ? coneRuleText(v.rule.rows, v.rule.count, U()) : v.noRule;
-  $("#cv-pat").textContent = v.patText || (n <= 5000 ? coneString(v.carton, boxes) : "Zu viele Kartons für die Textform.");
+  // Mustertexte werden in mm gespeichert und in der Einheit der Anzeige gezeigt
+  $("#cv-pat").textContent = v.patText ? conePatternIn(v.patText, U()) : (n <= 5000 ? coneString(v.carton, boxes, U()) : "Zu viele Kartons für die Textform.");
   const step = coneState.step == null || coneState.step > n ? n : coneState.step;
   const si = /** @type {HTMLInputElement} */ ($("#cv-step"));
   si.max = String(Math.max(1, n)); si.value = String(Math.max(1, step));
@@ -643,7 +655,7 @@ function renderConeRuleList() {
       const c = per.get(cur) || 0;
       rows.push(`<tr class="grp"><th colspan="4">${cur}${cur === nmax ? " oder mehr" : ""} ${cur === 1 ? "Karton" : "Kartons"}<span>${c} ${c === 1 ? "Regel" : "Regeln"}</span></th></tr>`);
     }
-    rows.push(`<tr class="${hit === r ? "hit" : ""}"><td class="rule">${esc(coneRuleText(r.rows, r.score, U()))}</td><td class="ex">${r.example ? dimsText(r.example) : "–"}</td><td class="pat"><span title="${esc(r.pat)}">${esc(r.pat)}</span></td><td><button type="button" class="btn small" data-show-rule="${r.id}">Zeigen</button></td></tr>`);
+    rows.push(`<tr class="${hit === r ? "hit" : ""}"><td class="rule">${esc(coneRuleText(r.rows, r.score, U()))}</td><td class="ex">${r.example ? dimsText(r.example) : "–"}</td><td class="pat"><span title="${esc(conePatternIn(r.pat, U()))}">${esc(conePatternIn(r.pat, U()))}</span></td><td><button type="button" class="btn small" data-show-rule="${r.id}">Zeigen</button></td></tr>`);
   }
   $("#cr-list").innerHTML = rows.join("") + moreRowsHtml(shown, total);
 }
